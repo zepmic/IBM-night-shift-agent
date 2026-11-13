@@ -32,6 +32,8 @@ Voraussetzungen: Git, Python ≥ 3.11, uv, Docker Desktop (`docker run hello-wor
 - Jeder arbeitet auf eigenem Branch: `name/feature` (z. B. `michel/json-retry`).
 - Merge in `main` nur nach einem erfolgreichen Eval-Lauf. Kleine, häufige Merges.
 - **Keine Keys committen.** Keys nur in `.env`.
+- **Kontext sofort teilen:** Veranstalter-Infos → `challenge/`, Erkenntnisse/Entscheidungen/Messwerte → `context/`. Doku geht **direkt auf `main`** und wird sofort gepusht. Details: [context/README.md](context/README.md).
+- Vor jeder Aufgabe: `git pull --rebase`.
 
 ## Zeitplan (Sa)
 
