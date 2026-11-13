@@ -7,6 +7,11 @@ Unser Agent untersucht einen Angriff auf einen Model Hub und dämmt ihn ein – 
 Bewertung: Genauigkeit + Kosten (LLM-Calls). Läuft im Docker-Container **ohne Internet** auf einem **unbekannten Szenario**.
 
 Strategie & Regeln: siehe [PLAYBOOK.md](PLAYBOOK.md).
+Harness-Gerüst, Grundbegriffe & Spickzettel: siehe [docs/STARTER-KIT.md](docs/STARTER-KIT.md).
+
+```bash
+MOCK=1 uv run run.py   # offline Test des Harness
+```
 
 ## Setup
 

@@ -1,0 +1,3 @@
+{"id": "t1", "question": "Welcher Fluss fließt durch Wien?", "gold": "Donau", "gold_sources": ["vienna.md"]}
+{"id": "t2", "question": "Wie heißt die Modellfamilie von IBM?", "gold": "Granite", "gold_sources": ["ibm.md"]}
+{"id": "t3", "question": "Wer hat 2031 die Fußball-WM gewonnen?", "gold": "UNKNOWN", "gold_sources": []}
