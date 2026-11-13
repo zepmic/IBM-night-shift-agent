@@ -14,7 +14,12 @@ Strategie & Regeln: siehe [PLAYBOOK.md](PLAYBOOK.md).
 git clone https://github.com/zepmic/IBM-night-shift-agent.git
 cd IBM-night-shift-agent
 cp .env.example .env   # Keys eintragen, die wir am Tag bekommen
+uv sync                # legt .venv an und installiert alles exakt nach uv.lock
+uv run night-shift-agent
 ```
+
+Pakete hinzufügen: `uv add <paket>` (aktualisiert `pyproject.toml` + `uv.lock` – beide committen).
+uv installieren (Mac): `brew install uv`
 
 Voraussetzungen: Git, Python ≥ 3.11, uv, Docker Desktop (`docker run hello-world` muss laufen).
 
