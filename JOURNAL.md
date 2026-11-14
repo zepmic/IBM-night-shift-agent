@@ -293,3 +293,9 @@ Format example (ignored: it sits in a code block). Write your entries below it, 
 - decided_by: ai
 - why: Rückschritt aus 15:09: run_Sb-7mLdXYUMt t25 (Access-Log-Policy) wiederholte denselben filter_rows-Aufruf sechsmal und bekam jedes Mal 102 Zeilen neu, $0.053 und Score 0.1 (teuerster Task des Runs). Jetzt höchstens ein erneutes Liefern pro Aufruf; danach greift wieder die Sperre mit dem `no_match`-Hinweis für den Abgleich mit der Ticket-Tabelle.
 - evidence: Tests grün; Bestätigung im nächsten vollen Run.
+
+## 15:47 · Kosten: Spezialwerkzeuge nur, wenn die Aufgabe ihr Thema berührt
+- decided_by: both (Mensch: „Kosten sind die Hälfte der Punkte“)
+- why: C ist logarithmisch: halbe Kosten ≈ +0.15–0.2 auf C ≈ +0.08 final, mehr als die meisten Genauigkeits-Fixes. Die lokalen Werkzeug-Beschreibungen allein sind 11.2k Zeichen (~2.8k Tokens) und gehen mit jedem Modell-Call mit. Jetzt bekommt jede Aufgabe view_image, download_file, filter_rows, incident_facts und submit fest; sha256, earliest_slot, capabilities, review_access, board_triage, manifest_audit, domain_contacts nur, wenn der autorisierte Text (Instruktion + offenes Ticket) ihr Thema nennt (Regex-Liste SPECIAL_TOOLS, großzügig). Ein Aufruf per Name funktioniert weiter.
+- rejected: Beschreibungen kürzen (verliert die Beispiele, an denen das Modell die Syntax lernt), max_steps senken
+- evidence: Tests grün; Messung im nächsten vollen Run (Kosten pro Run vorher $0.40–0.46).
