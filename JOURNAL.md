@@ -277,3 +277,8 @@ Format example (ignored: it sits in a code block). Write your entries below it, 
 - decided_by: ai
 - why: run_GXlstedXsIFN t30 (Leak) 0.3: das Modell ordnete SHA-256-Präfixe falsch zu. `incident.leak_check` hasht jeden Wert der Dump-Datei (umbrochene Werte zusammengefügt, abgeschnittene können nicht treffen) gegen die Fingerprint-Spalte; Ergebnis liegt der Aufgabe bei, Zitate = Dump + Fingerprint-Records. t28 (MCP) Quellen 0/6, weil bei unsicheren Servern keine Zitate gesetzt wurden: jetzt bestimmt die Antwort die Zitate (berechnete Fehlschläge + vom Modell ergänzte Manifeste). t35/t48 (Patient Zero) 1/2: Antwort mit Artefakt+Agent aus dem Faktenblatt zitiert genau Log-Zeile + Kopie. Daniels `leak.py` (Branch b/offline-tools-ready) macht dasselbe offline; zusammengeführt, verdrahtet ist incident.leak_check.
 - evidence: offline t30 exakt inkl. Quellen. Run 9 (520e231): 0.917 / $0.46 / final 0.607; Run 8 (2866807): 0.897 / $0.43 / 0.598.
+
+## 15:37 · Leak-Check: Board-Posts und „ID=Wert“-Notation
+- decided_by: ai
+- why: Gegenprobe über alle lokalen Seeds: 8/12 exakt, je ein Token fehlte, weil er in einem Board-Post stand („leaked … in the dump or on the agents board“) als `TOK-X=wert`. Jetzt werden Board-Dateien gelesen, wenn der Text das Board nennt (JSON-Strings entpackt, Zitat per Zeile), und Werte nach `:`/`=` überlappend geprüft.
+- evidence: offline 12/12 exakt inkl. Quellen (run_iOrNuR6b10uJ, run_32SoTk4qmWz4, run_xVoe6Wvi24YP, run_GXlstedXsIFN, run_Go_5ItDDXKIl).

@@ -1174,12 +1174,24 @@ def leak_check(read: Callable[[str], bytes], paths: set[str], text: str) -> tupl
     fps = {r[hcol].strip().lower(): r[0].strip() for r in rows[1:] if r}
     named = [p for p in re.findall(r"/[\w./-]+", text) if p in paths and not p.endswith(".csv")]
     dumps = named or [p for p in sorted(paths) if p.startswith("/intel/") and p.lower().endswith((".txt", ".md", ".log"))]
+    if re.search(r"\bboard\b", text, re.I):  # run_iOrNuR6b10uJ t31: "in the dump or on the agents board"
+        dumps += [p for p in sorted(paths) if "/board" in p.lower() and p.lower().endswith((".jsonl", ".json", ".ndjson")) and p not in dumps]
     found: dict[str, tuple[str, int]] = {}
     for d in dumps:
         try:
             lines = read(d).decode("utf-8", "replace").splitlines()
         except Exception:  # noqa: BLE001
             continue
+        if d.lower().endswith((".jsonl", ".json", ".ndjson")):  # board posts: the strings of each record, unescaped
+            def _strs(v: Any) -> list[str]:
+                return [v] if isinstance(v, str) else [x for y in (v.values() if isinstance(v, dict) else v if isinstance(v, list) else []) for x in _strs(y)]
+            un = []
+            for line in lines:
+                try:
+                    un.append(" ".join(_strs(json.loads(line))))
+                except Exception:  # noqa: BLE001
+                    un.append(line)
+            lines = un
         cands: list[tuple[str, int]] = []
         for n, line in enumerate(lines, 1):
             toks = re.findall(r"[A-Za-z0-9_\-+/=.]{8,}", line)
@@ -1189,7 +1201,7 @@ def leak_check(read: Callable[[str], bytes], paths: set[str], text: str) -> tupl
                 cont = re.match(r"\s+([A-Za-z0-9_\-+/=]+)", nxt)
                 if cont:
                     cands.append((toks[-1] + cont.group(1), n))
-            for m in re.finditer(r"[:=]\s*([^\s\"',;]{8,})", line):
+            for m in re.finditer(r"(?=[:=]\s*([^\s\"',;:=()]{8,}))", line):  # overlapping: "ID=value" after "label:"
                 cands.append((m.group(1), n))
         for v, n in cands:
             h = hashlib.sha256(v.encode()).hexdigest()
@@ -1198,7 +1210,9 @@ def leak_check(read: Callable[[str], bytes], paths: set[str], text: str) -> tupl
                     found[tid] = (d, n)
     ids = sorted(found)
     src = sorted({found[i][0] for i in ids})
-    cites = [{"path": p} for p in src] + [{"path": fp, "record": i} for i in ids]
+    cites = [{"path": p} for p in src if not p.lower().endswith((".jsonl", ".json", ".ndjson"))] + \
+        [{"path": fp, "record": i} for i in ids] + \
+        [{"path": found[i][0], "line": found[i][1]} for i in ids if found[i][0].lower().endswith((".jsonl", ".json", ".ndjson"))]
     expl = (f"Values in {json.dumps(dumps)} hashed (SHA-256) and compared with {fp} column {rows[0][hcol]!r}; joined line "
             f"continuations, truncated values cannot match. Leaked in full: {json.dumps(ids)}"
             + "".join(f"\n- {i}: {found[i][0]} line {found[i][1]}" for i in ids))
