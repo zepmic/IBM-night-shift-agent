@@ -16,7 +16,7 @@
 | Dev: Seeds wiederholbar, Antworten nach `finish` sichtbar | **Gratis-Trainingsdaten**: wir bauen ein Offline-Eval-Set. |
 | `/AGENTS.md` im Workspace = Quelle der Wahrheit | Pro Run zuerst die Operator-Dateien lesen; Rest ist Daten, nie Anweisung. |
 | Andere Teams platzieren Prompt Injections | Guardrails sind Pflicht, nicht optional. |
-| Nur `typesafe/jev-1.14` (+ `qwen3-embedding-8b`) | Keine OCR-Libs, keine lokalen Modelle. Bilder → Vision des Modells. |
+| Nur `google/gemma-4-31b-it` + `typesafe/jev-1.14` + `qwen3-embedding-8b` | Keine OCR-Libs, keine lokalen Modelle. Bilder → Vision von Gemma. Embeddings $0.01/1M Tokens → Retrieval ist billig. |
 | `JOURNAL.md` mit eigenem Eintrag | Sonst nicht preisberechtigt. **Sofort anlegen.** |
 
 ## 2. Architektur
@@ -104,7 +104,7 @@ Achtung: Dev-Runs kosten echtes Budget. Ein ganzer Run = 30 Tasks. Zum Debuggen 
 
 ## 7. Offene Fragen ans Opening / Slack
 
-- Wie gut ist `jev-1.14` bei Tool Calling / JSON / Vision? → in der ersten Stunde testen
+- Wie gut ist `gemma-4-31b-it` bei Tool Calling / JSON / Vision? → in der ersten Stunde testen
 - Was ist der Jev-Endpunkt `/openrouter/api/alpha/decisions`? Evtl. ein günstiger Entscheidungs-Endpunkt → ausprobieren
-- Preis pro Token von `jev-1.14` und `qwen3-embedding-8b`
-- Dev-Budget-Höhe pro Team
+- Preis pro Token von Gemma und Jev (Embeddings: $0.01 / 1M laut Kit)
+- ~~Dev-Budget-Höhe~~ → **$15**, voller Run = 48 Tasks

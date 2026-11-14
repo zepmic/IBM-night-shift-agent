@@ -1,0 +1,9 @@
+# Never in the image: secrets, local environments, run outputs, caches.
+**/.env*
+.venv
+**/node_modules
+runs
+.cache
+.git
+**/__pycache__
+slides

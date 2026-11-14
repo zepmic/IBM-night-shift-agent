@@ -1,24 +1,24 @@
-# Secrets – NIE committen
+.venv/
+__pycache__/
+runs/
+.cache/
 .env
 .env.*
 !.env.example
+node_modules/
+submission.tar.gz
+.DS_Store
+examples/pi/pi-agent/*
+!examples/pi/pi-agent/models.json
 
-# Python
-__pycache__/
+# Team extras
 *.py[cod]
-.venv/
-venv/
-*.egg-info/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
-
-# Lokale Runs / Logs
-runs/
+*.egg-info/
 outputs/
+data/
 *.log
-
-# OS / Editor
-.DS_Store
 .idea/
 .vscode/

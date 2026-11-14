@@ -1,0 +1,1 @@
+"""Harness Arena starter kit."""

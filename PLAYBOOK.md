@@ -39,6 +39,12 @@ Falls die API Structured Output / JSON-Schema kann: nutzen.
 - Wenige Tools mit eindeutigen Namen und Beschreibungen.
 - 1–2 Beispiele (few-shot) für einen korrekten Tool-Call.
 
+## Modelle & Budget
+
+- Hauptmodell **`google/gemma-4-31b-it`**, dazu nur `typesafe/jev-1.14` und `qwen/qwen3-embedding-8b` (Embeddings $0.01 / 1M Tokens).
+- Dev-Budget **$15** gesamt, voller Dev-Run = 48 Tasks. Auf Teilmengen iterieren.
+- Final: $3, 30 Min. Jeden Task sofort abgeben, sobald er gelöst ist.
+
 ## Nicht tun
 
 - Kein eigenes Modell / Embedder / Classifier einbinden – **verboten**. Nur die gestellten Modelle.
