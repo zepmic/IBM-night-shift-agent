@@ -1076,17 +1076,23 @@ def _policy_spec(rule: str, log_path: str) -> dict | None:
     for m in re.finditer(r"\b(\w+) is (?:exactly )?\"([^\"]+)\"", r):
         if not re.search(r"\bnot\s*$", r[:m.start()]):
             where.append({"column": m.group(1), "op": "eq", "value": m.group(2)})
+    for m in re.finditer(r"\b(\w+) is one of:? ((?:\"[^\"]+\"(?:, | or | and )?)+)", r):
+        where.append({"column": m.group(1), "op": "in", "value": re.findall(r"\"([^\"]+)\"", m.group(2))})
     for m in re.finditer(r"\b(\w+) (?:field )?starts(?: with)? \"([^\"]+)\"", r):
         where.append({"column": m.group(1), "op": "startswith", "value": m.group(2)})
     for m in re.finditer(r"\b(\w+) is not \"([^\"]+)\"", r):
         where.append({"column": m.group(1), "op": "ne", "value": m.group(2)})
     for m in re.finditer(r"\b(\w+) field is empty", r):
         where.append({"column": m.group(1), "op": "empty"})
-    t = re.search(r"no valid (?:change )?ticket in (/[\w./-]+\.csv)(.*?)(?:\d\.\s|$)", r)
+    t = re.search(r"no valid (?:\w+ ){0,3}ticket in (/[\w./-]+\.csv)(.*?)(?:\d\.\s|$)", r)
+    # another register the wording does not switch off (emergency windows that DO apply) is beyond this translation
+    others = set(re.findall(r"/[\w./-]+\.csv", r)) - {log_path} - ({t.group(1)} if t else set())
+    if others and not re.search(r"do(?:es)? not apply|ignore", r, re.I):
+        return None
     if t:
         body = t.group(2)
         st = re.search(r"status \"([^\"]+)\"", body)
-        cols = re.search(r"match the request's ([\w, ]+?)(?:,? and cover|$|;)", body)
+        cols = re.search(r"match(?:es)? (?:the request's |both )([\w, ]+?)(?:,? and cover|$|;)", body)
         on = {c: c for c in re.findall(r"\w+", cols.group(1)) if c not in ("and", "the")} if cols else {}
         nm: dict = {"path": t.group(1), "on": on}
         if st:
