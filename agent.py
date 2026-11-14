@@ -201,9 +201,54 @@ def trim_history(messages: list[dict], cfg: Config) -> list[dict]:
     return out
 
 
+FALLBACK_OUTCOME = "UNSUPPORTED"  # the only refusal that can score without an answer (Task API: "the outcome alone counts")
+
+
 def solve_task(client: ArenaClient, run_id: str, task: Task, tool_specs: list[ToolSpec], cfg: Config,
                tracker: llm.CostTracker, trace: Callable[[dict], None] = lambda e: None) -> dict:
-    """Solve one task. Returns the submit response (dev: grade feedback) or {"error": ...}."""
+    """Solve one task. Returns the submit response (dev: grade feedback) or {"error": ...}.
+
+    Whatever goes wrong (model error, exception, step limit), the task is still submitted exactly once: an
+    unsubmitted task scores 0 for sure. The fallback is a submit only, never a state-changing tool."""
+    state: dict = {"pending": None, "final": False}
+    try:
+        res = _solve(client, run_id, task, tool_specs, cfg, tracker, trace, state)
+    except Exception as e:  # noqa: BLE001 - a bug in one task must not lose its submission
+        res = {"error": f"{type(e).__name__}: {e}"}
+        trace({"event": "crash", "error": res["error"]})
+    if "error" not in res or state["final"]:
+        return res
+    return _fallback_submit(client, run_id, task, state, res["error"], trace)
+
+
+def _fallback_submit(client: ArenaClient, run_id: str, task: Task, state: dict, error: str,
+                     trace: Callable[[dict], None]) -> dict:
+    """Submit once after a failed loop: the model's last rejected submit attempt if there is one (first as it was,
+    then without sources), else the safe default (UNSUPPORTED, null, no sources)."""
+    p = state.get("pending")
+    attempts = []
+    if p:
+        attempts += [(p["outcome"], p["answer"], p["sources"])] if p["sources"] else []
+        attempts.append((p["outcome"], p["answer"], []))
+    attempts.append((FALLBACK_OUTCOME, None, []))
+    last = error
+    for outcome, answer, sources in attempts:
+        try:
+            resp = client.submit(run_id, task.task_id, outcome, answer, sources)
+        except Exception as e:  # noqa: BLE001
+            last = f"{error}; fallback submit failed: {e}"
+            trace({"event": "submit_error", "error": str(e), "fallback": True})
+            if getattr(e, "status", None) != 400:  # 409 already submitted / deadline, 401, network: no point retrying
+                break
+            continue
+        trace({"event": "submit", "args": {"outcome": outcome, "answer": answer, "sources": sources},
+               "response": resp, "fallback": error})
+        return {**resp, "fallback": error} if isinstance(resp, dict) else {"response": resp, "fallback": error}
+    return {"error": last}
+
+
+def _solve(client: ArenaClient, run_id: str, task: Task, tool_specs: list[ToolSpec], cfg: Config,
+           tracker: llm.CostTracker, trace: Callable[[dict], None], state: dict) -> dict:
     tools = to_openai_tools(tool_specs) + [VIEW_IMAGE_TOOL, DOWNLOAD_FILE_TOOL, SUBMIT_TOOL]
     messages: list[dict] = [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -211,8 +256,9 @@ def solve_task(client: ArenaClient, run_id: str, task: Task, tool_specs: list[To
     ]
     trace({"event": "start", "task": task.task_id, "instruction": task.instruction, "model": cfg.model})
     nudges = 0
+    force = False  # the model stopped calling tools: one forced submit with what it has, before the fallback
     for step in range(cfg.max_steps):
-        last_chance = step == cfg.max_steps - 1
+        last_chance = force or step == cfg.max_steps - 1
         if last_chance:
             messages.append({"role": "user", "content": "Step limit reached. Call submit now with your best answer."})
         try:
@@ -232,7 +278,10 @@ def solve_task(client: ArenaClient, run_id: str, task: Task, tool_specs: list[To
             # null content + finish_reason=length means max_tokens was eaten by thinking
             nudges += 1
             if nudges > 3:
-                return {"error": "model did not call any tool"}
+                if last_chance:
+                    return {"error": "model did not call any tool"}
+                force = True
+                continue
             messages.append({"role": "user", "content": "Continue by calling a tool, or call submit if you are done."})
             continue
         for call in calls:
@@ -245,6 +294,7 @@ def solve_task(client: ArenaClient, run_id: str, task: Task, tool_specs: list[To
             if name == "submit":
                 outcome, answer = args.get("outcome", "OK"), normalize_answer(args.get("answer", ""))
                 sources = clean_sources(args.get("sources"))
+                state["pending"] = {"outcome": outcome, "answer": answer, "sources": sources}
                 try:
                     resp = client.submit(run_id, task.task_id, outcome, answer, sources)
                 except ArenaError as e:
@@ -260,6 +310,7 @@ def solve_task(client: ArenaClient, run_id: str, task: Task, tool_specs: list[To
                         trace({"event": "submit", "args": {**args, "sources": []}, "response": resp, "retry": "without sources"})
                         return resp
                     if e.status and e.status < 500 and e.status != 400:
+                        state["final"] = True  # the platform will not take a submit for this task any more
                         return {"error": str(e)}  # e.g. already submitted / deadline; a 400 (bad sources) goes back to the model
                     continue
                 trace({"event": "submit", "args": args, "response": resp})
