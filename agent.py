@@ -1054,9 +1054,12 @@ PLATFORM_TOPICS = {
 }
 
 
-FACTS_TOPIC = (r"incident|compromis|patient zero|exfiltrat|canar|honeytoken|attacker|contain|quarantin|exposed|entry (point|artifact)"
-               r"|chronolog|earliest (first|to latest)")
-FACTS_OTHER = r"board|manifest|\bmcp\b|access[- ]review|access requests?|agreement|leak check"  # helpers of their own
+FACTS_TOPIC = (r"\bINC-|incident(?! response ticket)|compromis|patient zero|exfiltrat|canar|honeytoken|attacker|quarantin|exposed"
+               r"|entry (point|artifact)|chronolog|earliest (first|to latest)")
+# Subjects with helpers of their own: there the fact sheet is not wanted, and loading it would arm the answer filter
+# for agent ids (run on seed 112309987, t02: a trifecta list cut from 8 agents to 1, score 0.13).
+FACTS_OTHER = (r"board|manifest|\bmcp\b|access[- ]review|access requests?|agreement|leak check|trifecta|capabilit|permission|scope"
+               r"|registry|delegat|rotat|calendar|access[- ]log|requests?\.csv")
 
 
 def _special_tools(text: str) -> list[dict]:
