@@ -3,7 +3,7 @@
 **Wer:** Paul (+ Claude Code) · **Zeit:** Sa 14.11., ~13:35 · **Typ:** Status + Übergabe
 
 ## Budget
-Team-Dev-Budget: **$4.88 von $15** verbraucht (14 Runs, Stand 13:35) + ein laufender voller Run (~$1). Ab jetzt sparsam:
+Team-Dev-Budget: **~$5.85 von $15** verbraucht (15 Runs, Stand 13:40). Ab jetzt sparsam:
 erst offline/Docker testen, dann gezielte `--tasks`-Replays, volle Runs nur zur Bestätigung. **Immer nur ein Run gleichzeitig**
 (Kosten werden als Key-Verbrauch zwischen Start und Finish gemessen).
 
@@ -12,7 +12,9 @@ erst offline/Docker testen, dann gezielte `--tasks`-Replays, volle Runs nur zur 
 |---|---|---|---|---|---|---|
 | run_hP6Aq5nhZhYl | 675666297 | 0af3cc7 | 0.557 | $1.70 | 0.157 | 0.322 |
 | run_VLE9AicO_TF3 | 675666297 (Replay) | a0ae1fb (max_steps 14) | 0.578 | $1.24 | 0.203 | 0.348 |
-| run__8OvzdDTetNJ | frisch | 431e3ec (alle Tools) | *läuft* | | | |
+| **run__8OvzdDTetNJ** | **1796485340 (frisch)** | **431e3ec (alle Tools)** | **0.700** | **$0.97** | **0.238** | **0.434** |
+
+Run 3: nur noch 11/48 Tasks am Schrittlimit (vorher 23), 0 Regelverstöße. Das ist die Ausgangszahl für weitere Arbeit.
 
 Kosten sind der größte Hebel: im Final wird C über die Spanne der Final-Runs aller Teams (mind. 10×) gerechnet; Starter-Kit-Finals
 kosteten $0.66–0.81. Bei max_steps 14 laufen ~23/48 Tasks ans Limit (72 % der Kosten, Ø 0.37 Score). Ø ~11.5k Prompt-Tokens pro Call.

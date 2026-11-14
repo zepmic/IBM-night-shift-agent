@@ -147,3 +147,9 @@ Format example (ignored: it sits in a code block). Write your entries below it, 
 - why: t03 nutzte den Join erst gar nicht (7× gleicher filter_rows-Call), dann ohne Ticket-Spalte (22 statt 39). Jetzt: identische lokale Calls bekommen einen Hinweis statt Neuberechnung; hat die Tabelle eine Spalte wie die ID-Spalte der Join-Tabelle, wird sie mit abgeglichen. Antwortwerte, die selbst Datensatz-IDs sind, werden über den 4er-Deckel hinaus zitiert (Grader-Budget „erwartet + 2“ bleibt).
 - rejected: Modell per Prompt zwingen, die Spalte zu nennen (hat es trotz Beispiel nicht getan)
 - evidence: t03 0.06 → 0.41 (vor ID-Spalten-Fix); offline jetzt 39/39 auch mit der Spezifikation des Modells. tests/test_real_data.py prüft die Tools gegen echte Dev-Dateien (auch im Docker-Wächter).
+
+## 13:40 · Bestätigung auf frischem Seed: 0.700 / $0.97
+- decided_by: both
+- why: Abnahme aller Änderungen (Router, earliest_slot, Join, count_distinct, capabilities, max_steps 14, Zitat-Fix) auf einem ungesehenen Seed, wie im Final.
+- rejected: weitere Replays auf bekannten Seeds (überschätzen den Effekt)
+- evidence: run_hP6Aq5nhZhYl 0.557 / $1.70 / final 0.322 → run__8OvzdDTetNJ 0.700 / $0.97 / final 0.434; Tasks am Schrittlimit 23 → 11; 0 Regelverstöße.

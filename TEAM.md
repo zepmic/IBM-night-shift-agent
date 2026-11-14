@@ -62,3 +62,6 @@ uv installieren (Mac): `brew install uv`
 | Version | Run-ID | Tasks | Score | Kosten | Notiz |
 |---|---|---|---|---|---|
 | Starter Kit (c2ab907) | run_7FdiWah57oDE | t01 | 0.77 (Sources 1/4) | $0.0045–0.007 | Antwort richtig, Quellen unvollständig. Details: [context/1000-michel-baseline.md](context/1000-michel-baseline.md) |
+| Router-Fix + earliest_slot (0af3cc7) | run_hP6Aq5nhZhYl | alle 48 | A 0.557 · final 0.322 | $1.70 | erster voller Run, Kosten zu hoch ([context/1315](context/1315-paul-tools-kosten.md)) |
+| + max_steps 14 (a0ae1fb) | run_VLE9AicO_TF3 | alle 48 (Replay) | A 0.578 · final 0.348 | $1.24 | gleicher Seed, −27 % Kosten |
+| + alle Code-Tools (431e3ec) | run__8OvzdDTetNJ | alle 48, frischer Seed | **A 0.700 · final 0.434** | **$0.97** | 0 Regelverstöße, 11/48 am Schrittlimit ([context/1335](context/1335-paul-uebergabe.md)) |
