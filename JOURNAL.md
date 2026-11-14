@@ -201,3 +201,9 @@ Format example (ignored: it sits in a code block). Write your entries below it, 
 - why: t47 – „Rafael Costa's agent“ passt auf zwei Agents; das Modell wählte den kompromittierten und handelte → Regelverstoß, 0. Der Harness prüft den autorisierten Text gegen den Roster (Name/Owner, der 2–4 Agents trifft, ohne dass eine ID genannt ist), gibt den Hinweis mit und sperrt Aktionen. t13 – ingest-10 war schon quarantänisiert und wurde erneut quarantänisiert → 0; die Sperre liest den Stand aus dem Gateway-Log. Bei berechneten Antworten (Containment, Ketten, Access-Review, MCP, Rückfrage) setzt der Harness die Zitate aus dem, was die Rechnung benutzt hat.
 - rejected: nur Prompt-Regel (stand in AGENTS.md und wurde ignoriert)
 - evidence: t47 0 → 1.00, t13 0 → 1.00, t14 0.58 → 0.70 (Rotationszeit: `gap_min: 0` wurde als 60 gelesen, behoben).
+
+## 14:40 · Abnahme auf zwei frischen Seeds: 0.434 → 0.512
+- decided_by: both
+- why: Der erste frische Seed nach dem Umbau (run_xVoe6Wvi24YP) halbierte die Kosten, hob die Genauigkeit aber kaum (0.709): das neue Szenario hatte das Einstiegs-Artefakt als Bild-Datei, die Freigabe des Auditor-Transfers im Handover-Dokument statt im Change-Log und eine andere Zählregel („nur erfolgreiche, jeder Record einmal“). Alle drei sind jetzt im Code allgemein gelöst: Bild-Kopien gehen an die Vision, Freigaben werden in allen Tier-2-Dokumenten gesucht, die Zählregel wird aus dem Wortlaut des Runbooks gelesen und zitiert. Ereignis-Reihenfolgen sortiert der Code, das Modell ordnet nur zu.
+- rejected: weitere Replays auf dem bekannten Seed (hätten diese drei Unterschiede nie gezeigt)
+- evidence: run__8OvzdDTetNJ 0.700 / $0.97 / final 0.434 → run_xVoe6Wvi24YP 0.709 / $0.41 / 0.474 → run_iOrNuR6b10uJ 0.772 / $0.45 / 0.512. Offline nach dem Fix: 10/10 Vorfalls-Tasks und 3/3 Access-Reviews des zweiten Seeds exakt.
