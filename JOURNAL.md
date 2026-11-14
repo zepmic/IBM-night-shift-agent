@@ -225,3 +225,9 @@ Format example (ignored: it sits in a code block). Write your entries below it, 
 - why: run_Go_5ItDDXKIl: t42 (Breach-Notification) Antwort richtig, Quellen 0/4, weil die .ods-Zeilen ohne `sheet` zitiert wurden; t38 (Kanarien) Quellen 1/11, weil canaries.csv nie gelesen wurde (Faktenblatt rechnet sie). Jetzt ergänzt der Harness vor der Abgabe den Blattnamen (das Blatt, das load_table liest) und legt die Kanarien-IDs aus dem Faktenblatt als Records von canaries.csv in das Evidenz-Ledger.
 - rejected: Prompt-Regel „sheet immer angeben“ (stand schon im Faktenblatt)
 - evidence: offline: `_fill_sheets` auf run_Go_5ItDDXKIl t42 -> sheet 'transfers'. Bestätigung im nächsten vollen Run.
+
+## 15:09 · Vision liest wörtlich zuerst; Verlauf kürzer, gekürzte lokale Ergebnisse werden neu geliefert
+- decided_by: both (Mensch: „Kosten reduzieren“)
+- why: run_Go_5ItDDXKIl t25/t37 je 0.6: die Vision beantwortete nur die Frage des Modells und ließ „Effective from 2026-11-21 … until then the existing clause remains in force“ weg, also nahm das Modell die nicht gültige 120-h-Frist. Modell-Aufrufe von view_image liefern jetzt erst die wörtliche Transkription, dann die Antwort (Tokenlimit Vision 700 -> 1200). Kosten: keep_small_chars 6000 -> 4000, keep_full_outputs 3 -> 2; damit die Wiederholungssperre nichts unterschlägt, bekommt ein wiederholter lokaler Aufruf, dessen Ausgabe gekürzt sein kann, sein volles Ergebnis zurück.
+- rejected: max_steps senken (trifft die schweren, aber lösbaren Tasks)
+- evidence: offline t37: Transkription enthält jetzt Gültigkeitsdatum ($0.0002). Bestätigung im nächsten vollen Run.
