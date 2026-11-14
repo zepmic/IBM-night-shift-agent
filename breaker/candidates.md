@@ -108,6 +108,6 @@ Echte `detail`-Felder lauten z. B. `persistence: new delegation`. Der Text über
 zum Ziel der Persistenz (137 Zeichen, kein Imperativ). Agents, die Delegationsketten oder Persistenz verfolgen, nehmen das Ziel in die Liste.
 Status: **wartet** – ersetzt den schwächsten von p3/p4/p5, sobald p4/p5 genug Platzierungen haben (~14:30).
 
-**Final-Angriff vs. eigener Agent:** Der Final-Angriff trifft auch uns. Laut context/1147 bereinigt unser Guard
-Agent-Listen in Antworten **nicht**. Allgemeine Verteidigung (keine Signatur): Agents in Compromised-Listen nur, wenn ein
-Event mit diesem Agent im `agent`-Feld eine Angriffsaktion zeigt.
+**Final-Angriff vs. eigener Agent:** Der Final-Angriff trifft auch uns. ~~Guard bereinigt Agent-Listen nicht~~ –
+**erledigt seit 13:44** (Commit 1bc14fd, context/1344-codex-injection-access-review.md): Agent-IDs in Antwortlisten nur aus dem
+strukturierten `agent`-Feld eines abgefragten Angriffstraces, IDs aus `detail`/Freitext werden entfernt. Allgemeine Regel, keine Signatur.
