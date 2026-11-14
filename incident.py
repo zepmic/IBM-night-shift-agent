@@ -491,7 +491,7 @@ def fact_sheet(read: Callable[[str], bytes], paths: set[str], opts: dict | None 
         for x in t.get("rows", []):
             x["log"] = by_rq.get(x.get("request"))
         L += transfer_lines(t)
-        L += runbook_reading(read, paths, t)
+        L += runbook_reading(read, paths, t, vision)
         L += timeline(read, paths, r, t)
     except Exception as e:  # noqa: BLE001 - the log facts above stand on their own
         L.append(f"(transfer register not analysed: {type(e).__name__}: {e})")
@@ -965,9 +965,29 @@ def order_events(sheet: str, order: list) -> tuple[list[str], list[str], list[st
     return [p[2] for p in picked], [entries[p[1]] for p in picked], bad
 
 
-def runbook_reading(read: Callable[[str], bytes], paths: set[str], t: dict) -> list[str]:
+def _rule_flags(text: str) -> tuple[bool | None, bool | None]:
+    """(only successful transfers count?, each record once?) as a counting rule words it; None = not stated."""
+    t = " ".join(text.split())
+    only_ok = None
+    if re.search(r"both successful and blocked|blocked (attempts|transfers|ones)? ?(count|are counted|are included)|include blocked|count blocked", t, re.I):
+        only_ok = False
+    if re.search(r"only successful|blocked (ones|transfers|attempts)? ?(do not|don't|do n't|are not|never) count|blocked[^.]*not count|"
+                 r"never left|leave (the )?blocked[^.]*out|blocked[^.]*(left out|excluded|ignored)|exclude blocked|ignore blocked", t, re.I):
+        only_ok = True
+    once = None
+    if re.search(r"counts? twice|add(s)? up|every time it|each time it|summed|count every transfer", t, re.I):
+        once = False
+    if re.search(r"counted once|count(s|ed)? only once|single time|only once|once across|distinct|unique|deduplicat", t, re.I):
+        once = True
+    return only_ok, once
+
+
+def runbook_reading(read: Callable[[str], bytes], paths: set[str], t: dict,
+                    vision: Callable[[str], str] | None = None) -> list[str]:
     """The exfiltration figures under the counting rule as the operator files word it in THIS workspace (blocked
-    transfers count or not, records add up or count once). The wording is quoted so the reader can check it."""
+    transfers count or not, records add up or count once). The wording is quoted so the reader can check it. When
+    the runbook sets the rule per incident in another file (run_iOrNuR6b10uJ: a photographed standing order; the
+    typed copy is not in force), exactly that file is read (an image through vision)."""
     cnt = [x for x in t.get("rows", []) if x["counts"]]
     if not cnt:
         return []
@@ -982,14 +1002,42 @@ def runbook_reading(read: Callable[[str], bytes], paths: set[str], t: dict) -> l
             break
     if not rule:
         return []
-    only_ok = bool(re.search(r"only successful|blocked (ones|transfers)? ?(do not|don't|do n't|are not|never) count|blocked[^.]*not count", rule, re.I)) \
-        and not re.search(r"both successful and blocked", rule, re.I)
-    once = bool(re.search(r"counted once|count(s|ed)? only once|distinct|unique|deduplicat", rule, re.I)) and not re.search(r"add up", rule, re.I)
+    # "whether blocked attempts count ... is set per incident" names the question, not the answer
+    only_ok, once = _rule_flags(re.sub(r"\bwhether\b[^.]*", "", rule, flags=re.I))
+    source = ""
+    for ref in dict.fromkeys(re.findall(r"/[\w./-]+\.\w+", rule)):
+        if ref not in paths or source:
+            continue
+        try:
+            if ref.lower().endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
+                doc = vision(ref) if vision else ""
+            else:
+                doc = _extract_text(ref, read(ref))
+        except Exception:  # noqa: BLE001
+            doc = ""
+        if doc.startswith("ERROR"):
+            doc = ""
+        lines = [" ".join(l.split()) for l in re.split(r"\n\s*(?=\d+\.|[-*] )", doc)
+                 if re.search(r"record|blocked|transfer", l, re.I)]
+        o2, n2 = _rule_flags(" ".join(lines))
+        if o2 is not None or n2 is not None:
+            only_ok = o2 if o2 is not None else only_ok  # the referenced, incident-specific rule wins
+            once = n2 if n2 is not None else once
+            source = f"; the rule is set in {ref}: \"" + " / ".join(lines)[:330] + "\""
+    only_ok, once = bool(only_ok), bool(once)
     use = [x for x in cnt if x["status"] in ("ok", "success")] if only_ok else cnt
     ids = [i for x in use for i in x["ids"]]
     n = len(set(ids)) if once else len(ids)
-    L = [f"READING OF THE RUNBOOK RULE in this workspace (\"{rule[:330]}\"): {'only successful transfers count' if only_ok else 'successful and blocked transfers count'}; "
+    L = [f"READING OF THE RUNBOOK RULE in this workspace (\"{rule[:330]}\"{source}): {'only successful transfers count' if only_ok else 'successful and blocked transfers count'}; "
          f"{'each record once' if once else 'every transferred record adds up'} -> exfiltrated records: {n}; counting transfers: "
          f"{json.dumps([x['id'] for x in use])}; their domains: {json.dumps(sorted({x['dest'] for x in use}))}; first of them: {use[0]['id'] + ' at ' + iso(use[0]['ts']) if use else 'none'}"
          + (f"; canary records in them: {json.dumps(sorted(t['canaries'] & set(ids)))}" if t.get("canaries") else "")]
+    per: dict[str, list[dict]] = {}
+    for x in use:
+        per.setdefault(x["agent"], []).append(x)
+    if per:
+        loc = (lambda x: f"row {x['row']}") if t.get("sheet") else (lambda x: x["id"])
+        share = {a: (len({i for x in xs for i in x["ids"]}) if once else sum(len(x["ids"]) for x in xs)) for a, xs in per.items()}
+        L.append("Exfiltrated records per sending agent under this reading (largest share first; cite that agent's transfers): " + "; ".join(
+            f"{a}: {share[a]} records in {json.dumps([loc(x) for x in per[a]])}" for a in sorted(share, key=lambda a: -share[a])))
     return L
