@@ -74,6 +74,27 @@ def domain_of(target: str) -> str:
     return t.rsplit("@", 1)[-1].strip(" <>")
 
 
+def domain_contacts(read: Callable[[str], bytes], paths: set[str], domains: list[str], opts: dict | None = None) -> str:
+    """Per domain: every log event whose target lies in it (URL, e-mail address or host; subdomains included), by status."""
+    off = float((opts or {}).get("local_utc_offset_h") or 1)
+    ev = load_events(read, paths, off)
+    L = ["Contacts per domain over all gateway logs (target matched by domain: URLs, e-mail addresses and subdomains "
+         "count; blocked/declined attempts are listed and count as contact attempts):"]
+    for d in dict.fromkeys(str(x).strip().lower().strip(".") for x in domains if str(x).strip()):
+        d = domain_of(d)
+        hits = [e for e in ev if (lambda t: t == d or t.endswith("." + d))(domain_of(e.get("target", "")))]
+        if not hits:
+            L.append(f"- {d}: NEVER contacted (0 events)")
+            continue
+        by = {}
+        for e in hits:
+            by[e.get("status") or "?"] = by.get(e.get("status") or "?", 0) + 1
+        f = hits[0]
+        L.append(f"- {d}: {len(hits)} events {json.dumps(by)}; agents {json.dumps(sorted({e['agent'] for e in hits})[:8])}; "
+                 f"first {f['agent']} {f['action']} {f.get('target')} {f.get('status')} at {iso(f['ts'])} ({cite(f)})")
+    return "\n".join(L)
+
+
 # --- columns by content ---------------------------------------------------------------------------------------
 def _classify_columns(header: list[str], rows: list[list[str]]) -> dict[str, int]:
     """role -> column index for a log-like table, decided by what the cells look like (sample of the rows)."""
