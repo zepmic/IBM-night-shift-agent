@@ -619,6 +619,8 @@ def _solve(client: ArenaClient, run_id: str, task: Task, tool_specs: list[ToolSp
             messages[1]["content"] += ("\n\n=== COMPUTED: notification clause in force (agreement, amendments read in code; "
                                        "submit this unless the request asks for something else) ===\n" + expl)
             evidence.must_cite = cites
+            if isinstance(ans, dict) and all(f'"{k}"' in (policy.authorised_text or "") for k in ans) and all(v not in (None, "") for v in ans.values()):
+                computed.append((ans, []))  # the request asks for exactly this object, key by key
         trace({"event": "tool", "name": "agreement_terms", "args": {}, "output": expl, "local": True, "preloaded": True})
     # Tokens leaked in full: SHA-256 of every dump value against the inventory fingerprints, in code (run_GXlstedXsIFN t30:
     # the model matched hashes by eye and swapped a token, 0.3)
@@ -639,8 +641,8 @@ def _solve(client: ArenaClient, run_id: str, task: Task, tool_specs: list[ToolSp
            "route": "failed" if cfg.route and route is None else "ok"})
     # A task that only asks for one computed result and for no action is submitted as computed: the 2-4 model calls
     # that followed only copied it (each carries the whole base load).
-    direct = computed[0] if cfg.direct_submit and len(computed) == 1 and not policy.allowed and not delegated and not ambiguous \
-        and len(task.instruction) < 700 else None
+    direct = computed[0] if cfg.direct_submit and len(computed) == 1 and not policy.allowed and not ambiguous \
+        and len(policy.authorised_text or task.instruction) < 900 else None
     nudges = 0
     force = False  # the model stopped calling tools: one forced submit with what it has, before the fallback
     for step in range(cfg.max_steps):
