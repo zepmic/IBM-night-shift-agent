@@ -183,6 +183,12 @@ def check_action(policy: Policy, name: str, args: dict, acted: dict[str, set[str
 
 def _containment_problem(policy: Policy, ops: list[dict], acted: dict[str, set[str]], examined: set[str]) -> str | None:
     quarantining = {str(o.get("agent", "")) for o in ops if o.get("op") == "quarantine_agent"}
+    assigned_stand_ins = [str(o.get("stand_in")) for o in ops
+                          if o.get("op") == "quarantine_agent" and o.get("stand_in")]
+    assigned_stand_ins += [str(o.get("stand_in")) for n, a in policy.executed if n == "containment"
+                           for o in a.get("ops", []) if o.get("op") == "quarantine_agent" and o.get("stand_in")]
+    if len(assigned_stand_ins) != len(set(assigned_stand_ins)):
+        return "a stand-in may cover only one quarantined critical agent; assign a different designated stand-in to each agent."
     rotating = {str(o.get("token", "")) for o in ops if o.get("op") == "rotate_token"} | {
         str(o.get("token", "")) for n, a in policy.executed if n == "containment" for o in a.get("ops", []) if o.get("op") == "rotate_token"}
     for o in ops:

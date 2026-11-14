@@ -142,6 +142,12 @@ Format example (ignored: it sits in a code block). Write your entries below it, 
 - rejected: Summe der `count`-Spalte (doppelt gezählte Überlappungen)
 - evidence: t01 0 → 0.85, t12 0.85 → 1.00 (1 Tool-Call). Offline Finance 3119 = erwartet.
 
+## 13:17 · Stand-ins pro Quarantäne eindeutig
+- decided_by: ai
+- why: Im t21-Replay wurde derselbe Stand-in zwei kritischen Agents zugewiesen. Die bestehende Guardrail prüfte nur, ob ein Stand-in zugelassen oder kompromittiert ist, nicht ob er bereits einen anderen quarantänisierten Agent vertritt.
+- rejected: Korrektur durch das Modell allein (der fehlerhafte Plattformaufruf wäre dann bereits gesendet), vollständige Neugestaltung der offenen frame_agent-Prüfung (separate, größere Sicherheitslücke)
+- evidence: tests/test_guard.py blockiert die doppelte Zuweisung innerhalb eines atomaren Aufrufs und über zwei Aufrufe desselben Tasks; legitime eindeutige Zuweisung bleibt erlaubt.
+
 ## 13:22 · Join ergänzt die ID-Spalte, eigene Datensatz-IDs werden voll zitiert, Wiederholungen lokaler Tools abgefangen
 - decided_by: ai
 - why: t03 nutzte den Join erst gar nicht (7× gleicher filter_rows-Call), dann ohne Ticket-Spalte (22 statt 39). Jetzt: identische lokale Calls bekommen einen Hinweis statt Neuberechnung; hat die Tabelle eine Spalte wie die ID-Spalte der Join-Tabelle, wird sie mit abgeglichen. Antwortwerte, die selbst Datensatz-IDs sind, werden über den 4er-Deckel hinaus zitiert (Grader-Budget „erwartet + 2“ bleibt).
