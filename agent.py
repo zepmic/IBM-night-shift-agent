@@ -630,7 +630,10 @@ def _solve(client: ArenaClient, run_id: str, task: Task, tool_specs: list[ToolSp
                     ids_ = sorted(set(map(str, json.loads(m_ids.group(1))))) if m_ids else []
                 except ValueError:
                     ids_ = []
-                if ids_:
+                # direct only when every numbered condition of the policy became a filter condition (seed 112309987 t41:
+                # two "is one of" conditions were not translated, the over-wide list went out, 0.30)
+                n_rules = len(re.findall(r"(?:^|\n)\s*\d+[.)]\s", rule))
+                if ids_ and len(spec["where"]) >= n_rules:
                     computed.append((ids_, [{"path": m_log.group(1), "record": i} for i in ids_]))
             trace({"event": "tool", "name": "policy_filter", "args": spec, "output": out[:1500], "local": True, "preloaded": True})
     # Which breach-notification clause is in force for a customer: computed in code (base clause, signed amendments
@@ -740,9 +743,20 @@ def _solve(client: ArenaClient, run_id: str, task: Task, tool_specs: list[ToolSp
                                reasoning_effort=cfg.reasoning_effort, tracker=tracker)
             except llm.LLMError as e:
                 trace({"event": "llm_error", "error": str(e)})
-                if cfg.budget and re.search(r"\b403\b|limit exceeded|insufficient credit", str(e), re.I):
-                    cfg.budget.dead = True  # the key is spent: no other task should start another model loop
-                return {"error": str(e)}
+                if re.search(r"\b403\b|limit exceeded|insufficient credit", str(e), re.I):
+                    if cfg.budget:
+                        cfg.budget.dead = True  # the key is spent: no other task should start another model loop
+                    return {"error": str(e)}
+                # a provider timeout / 5xx is transient (seed 112309987 t36: one 504 -> fallback UNSUPPORTED, score 0):
+                # the same step is tried again, twice at most per task
+                state["llm_retries"] = state.get("llm_retries", 0) + 1
+                if state["llm_retries"] > 2 or last_chance and state["llm_retries"] > 1 or (cfg.deadline and time.time() > cfg.deadline):
+                    return {"error": str(e)}
+                if last_chance:
+                    messages.pop()  # the step-limit note is added again on the next round
+                    force = True
+                time.sleep(1.5)
+                continue
             finally:
                 if cfg.budget:
                     cfg.budget.call(-1)
@@ -794,8 +808,16 @@ def _solve(client: ArenaClient, run_id: str, task: Task, tool_specs: list[ToolSp
             if name == "submit":
                 outcome, answer = args.get("outcome", "OK"), normalize_answer(args.get("answer", ""))
                 supported_agents = {a for a, traces in evidence.acted.items() if traces & evidence.examined}
+                raw_answer = answer
                 outcome, answer, notes = guard.check_submit(policy, outcome, answer, supported_agents,
                                                             set(evidence.acted))
+                comp0 = getattr(evidence, "computed_list", None)
+                if outcome == "OK" and comp0 and isinstance(raw_answer, list) and answer != raw_answer \
+                        and set(map(str, raw_answer)) == set(map(str, comp0)):
+                    # the list computed from the registry in code is not an accusation taken from a document: the
+                    # agent-id filter must not empty it (seed 112309987 t27: trifecta list of 7 -> [], score 0)
+                    answer = raw_answer
+                    notes = [n for n in notes if "removed from the answer" not in n] + ["computed list kept as computed"]
                 if notes:
                     trace({"event": "guard", "submit": notes})
                 if outcome == "UNSUPPORTED":
