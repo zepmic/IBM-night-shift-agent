@@ -31,6 +31,7 @@ with tempfile.TemporaryDirectory() as d:
     assert sub["t02"]["args"]["sources"] == [{"path": "/inbox/msg_01.txt", "line": 1}], sub["t02"]
     assert all("fallback" not in s for s in sub.values())
     assert "/data/: contacts.csv, shelters.csv" in mock_server.STATE["first_prompt"], "the workspace map goes out with the task"
+    assert "=== OPERATOR FILE /AGENTS.md ===\n1| # Operator rules" in mock_server.STATE["first_prompt"], "and the rule file"
     end = ev["t01"][-1]
     assert end["event"] == "end" and abs(end["cost_usd"] - 0.0003) < 1e-9 and end["llm_calls"] == 3, end
     print(r.stdout.strip().splitlines()[-4])

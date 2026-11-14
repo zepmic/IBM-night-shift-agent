@@ -149,3 +149,47 @@ try:
 finally:
     agent.llm.chat = real_chat
 print("offline tests ok")
+
+# --- local helpers added after the dev runs: compact rendering, table filter, hash, preloaded rule files -------------
+import hashlib
+import sources as _S
+
+
+class _Files:
+    FILES = {"/AGENTS.md": "# Rules\nOperator files: /AGENTS.md and /runbook.md. See /fleet/changes.md and /contacts.csv.\n",
+             "/runbook.md": "# Runbook\nrule 1\n", "/fleet/changes.md": "- ops-01 flagged\n",
+             "/tickets/IR-1.md": "---\nticket: IR-1\nstatus: closed\n---\nold request\n",
+             "/tickets/IR-2.md": "---\nticket: IR-2\nstatus: open\n---\nList the violations.\n",
+             "/logs/req.csv": "request_id,ts,actor,action,ticket,result,n\nRQ-1,2026-11-14T01:00:00Z,external:x,read,,ok,5\n"
+                              "RQ-2,2026-11-14T02:00:00Z,external:y,read,CHG-1,ok,12\nRQ-3,2026-11-14T03:00:00Z,ops-01,read,,ok,7\n"
+                              "RQ-4,2026-11-14T04:00:00Z,external:z,read,,denied,30\nRQ-5,2026-11-14T05:00:00Z,external:z,reader,,ok,2\n"}
+
+    def download_file(self, run_id, task_id, path):
+        return self.FILES[path].encode(), "text/plain"
+
+
+_fc, _ev = _Files(), _S.Evidence()
+_out = _agent._filter_rows(_fc, "r", "t", {"path": "/logs/req.csv", "where": [
+    {"column": "action", "op": "eq", "value": "read"}, {"column": "actor", "op": "startswith", "value": "external:"},
+    {"column": "ticket", "op": "empty"}, {"column": "result", "op": "ne", "value": "denied"}]}, _ev, 8000)
+assert _out.endswith('["RQ-1"]') and "1 of 5 rows match" in _out, _out
+assert _ev.candidates(["RQ-1"], []) == [{"path": "/logs/req.csv", "record": "RQ-1"}]  # the hits are citable
+_ids = lambda where: json.loads(_agent._filter_rows(_fc, "r", "t", {"path": "/logs/req.csv", "where": where}, _S.Evidence(), 8000).rsplit(": ", 1)[1])  # noqa: E731
+assert _ids([{"column": "n", "op": "gt", "value": 7}]) == ["RQ-2", "RQ-4"]  # numbers compare as numbers, not text
+assert _ids([{"column": "ts", "op": "ge", "value": "2026-11-14T04:00:00Z"}]) == ["RQ-4", "RQ-5"]
+assert _ids({"column": "actor", "op": "in", "value": ["ops-01", "external:y"]}) == ["RQ-2", "RQ-3"]
+assert "Columns: request_id" in _agent._filter_rows(_fc, "r", "t", {"path": "/logs/req.csv", "where": [{"column": "x", "op": "eq"}]}, _ev, 8000)
+assert "5 of 5 rows shown" in _agent._filter_rows(_fc, "r", "t", {"path": "/logs/req.csv"}, _ev, 8000)
+assert _agent._filter_rows(_fc, "r", "t", {"path": "/nope.csv"}, _ev, 8000).startswith("ERROR")
+assert _agent._sha256({"values": ["abc"]}).endswith(hashlib.sha256(b"abc").hexdigest()) and _agent._sha256({}).startswith("ERROR")
+
+_pre = _agent._preload(_fc, "r", "t", set(_Files.FILES))
+assert [(p, l.split(" (")[0]) for p, l, _ in _pre] == [("/AGENTS.md", "OPERATOR FILE"), ("/runbook.md", "OPERATOR FILE"),
+    ("/fleet/changes.md", "FILE NAMED IN THE RULES"), ("/tickets/IR-2.md", "OPEN TICKET")], _pre   # closed ticket: history, not sent
+assert _pre[1][2] == "1| # Runbook\n2| rule 1" and _agent._preload(_fc, "r", "t", None) == [] and _agent._preload(_fc, "r", "t", {"/x.md"}) == []
+
+_r = _agent.render({"total": 2, "events": [{"file": "/l.jsonl", "line": 3, "agent": "a", "detail": 'say "hi"\nnow'}, {"file": "/l.jsonl", "line": 9, "agent": "b"}]})
+assert _r == 'total=2\nevents (file | line | agent | detail):\n/l.jsonl | 3 | a | say "hi" now\n/l.jsonl | 9 | b | ', _r
+assert _agent.render({"path": "/a.md", "start_line": 1, "end_line": 2, "total_lines": 2, "text": '1| a "q"\n2| b'}) == '/a.md lines 1-2 of 2\n1| a "q"\n2| b'
+assert _agent.render("tree") == "tree" and _agent.render({"found": False}) == '{"found": false}'
+print("helper tests ok")

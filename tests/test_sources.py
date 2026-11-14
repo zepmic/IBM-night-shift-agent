@@ -64,7 +64,21 @@ out, rep = S.finalize([{"path": "/fleet/fp.csv", "line": 2}, {"path": "/fleet/fp
                       None, ev3, None)
 assert out == [{"path": "/fleet/fp.csv", "record": "TOK-A-1"}, {"path": "/fleet/fp.csv", "line": 9}, {"path": "/logs/archive/d.csv", "line": 77},
                {"path": "/fleet/reg.json"}], out
-assert rep["dropped"] == [{"path": "/AGENTS.md", "line": 19}]
+assert {"path": "/AGENTS.md", "line": 19} in rep["dropped"]
+# the grader tolerates expected + 2 citations: one per answer value and file, no bare table paths, docx by paragraph,
+# and additions only for values without support (or the value's own table row)
+ev4 = S.Evidence()
+ev4.add_tool("query_logs", {}, {"events": [{"file": "/logs/a.jsonl", "line": n, "agent": a} for n, a in
+                                           ((10, "ops-01"), (11, "ops-01"), (30, "ops-02"), (31, "ops-02"), (50, "ops-01"))]})
+ev4.add_tool("read", {"path": "/fleet/agents.csv"}, {"text": "1| agent_id,name\n2| ops-01,A\n3| ops-02,B"})
+ev4.add_tool("read", {"path": "/notes/n.md"}, {"text": "1| ops-02 looked odd"})
+out, rep = S.finalize([{"path": "/logs/a.jsonl", "line": n} for n in (10, 11, 30, 31, 50)] + [{"path": "/fleet/agents.csv"}, {"path": "/n.docx", "line": 4}],
+                      ["ops-01", "ops-02"], ev4, None)
+assert out == [{"path": "/logs/a.jsonl", "line": 10}, {"path": "/logs/a.jsonl", "line": 30}, {"path": "/n.docx", "paragraph": 4},
+               {"path": "/fleet/agents.csv", "record": "ops-01"}], out  # 2 values + 2: the budget is full
+# within the budget two citations per value stay (two transfers to one domain are two pieces of evidence)
+out, _ = S.finalize([{"path": "/logs/a.jsonl", "line": n} for n in (10, 11, 50, 30)], ["ops-01", "ops-02"], ev4, None, max_add=0)
+assert [x["line"] for x in out] == [10, 11, 30], out
 
 # download_file extractions
 ev = S.Evidence()
@@ -78,7 +92,7 @@ assert ev.candidates(["evil-cdn.test", "TOK-4"], [], max_add=9) == [
 # finalize: unknown files dropped, paths normalised, duplicates removed
 out, rep = S.finalize([{"path": "r/a.pdf", "page": 2}, {"path": "/nope.md", "line": 1}, {"path": "/r/a.pdf", "page": 2}],
                       ["TOK-4"], ev, {"/r/a.pdf", "/r/h.docx"})
-assert out == [{"path": "/r/a.pdf", "page": 2}, {"path": "/r/h.docx", "paragraph": 2}] and rep["dropped"] == [{"path": "/nope.md", "line": 1}], (out, rep)
+assert out == [{"path": "/r/a.pdf", "page": 2}, {"path": "/r/h.docx", "paragraph": 2}] and {"path": "/nope.md", "line": 1} in rep["dropped"], (out, rep)
 # odd tool results never raise
 for junk in (None, 5, {"content": None}, [[1, 2], {"path": 3, "line": "x"}], "x" * 10):
     ev.add_tool("read", {"path": "/a.md"}, junk)

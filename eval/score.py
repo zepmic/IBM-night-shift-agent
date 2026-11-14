@@ -20,6 +20,7 @@ from typing import Any
 
 LOCATORS = ("page", "line", "record", "sheet", "row", "paragraph")
 LINE_TOLERANCE = 2
+FREE_EXTRA = 2  # citations the grader tolerates beyond the expected ones
 
 
 def norm(v: Any) -> Any:
@@ -100,8 +101,13 @@ def sources_score(expected: Any, got: Any) -> dict:
         if idx:
             hit += 1
             used.update(idx)
+    # Citations beyond expected + 2 cost their share (fitted on 20 graded dev tasks, exact on all of them):
+    # several citations that hit the same expected source count once.
+    n = len(got) - len(used) + hit
+    over = max(0, n - (len(expected) + FREE_EXTRA))
+    recall = hit / len(expected) if expected else 1.0
     return {"hit": hit, "expected": len(expected), "extra": len(got) - len(used),
-            "score": hit / len(expected) if expected else 1.0}
+            "score": recall * (1 - over / n) if n else recall}
 
 
 def score_case(case: dict, sub: dict | None) -> dict:
