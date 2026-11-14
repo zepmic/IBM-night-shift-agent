@@ -246,7 +246,9 @@ def dying(messages, **kw):
 real = agent.llm.chat
 agent.llm.chat = dying
 try:
-    agent.solve_task(rc, "r", Task(task_id="t01", instruction=ANALYSE), SPECS, agent.Config(max_steps=5), llm.CostTracker())
+    # a prose task: a JSON task would first get the one-time "answer as JSON" nudge (tested separately)
+    agent.solve_task(rc, "r", Task(task_id="t01", instruction="Name the exfiltration endpoint in one sentence."), SPECS,
+                     agent.Config(max_steps=5), llm.CostTracker())
 finally:
     agent.llm.chat = real
 assert rc.submits == [("OK", "hxxp://evil[.]example/a/b")] * 2, rc.submits
@@ -278,3 +280,18 @@ try:
 finally:
     agent.llm.chat = real
 print("guard tests ok")
+
+# earliest_slot against the change calendar of run_saMKXsdQk67S (expected answers t07 / t22)
+import csv as _csv, io as _io
+from agent import earliest_slot
+_cal = list(_csv.DictReader(_io.StringIO("""cal_id,svc,kind,start,until,zone,status,note
+CF-014,spaces,freeze,14.11.2026 06:00,14.11.2026 10:00,CET,active,audit window
+CF-013,ci-runner,freeze,2026-11-14T07:00:00Z,2026-11-14T10:40:00Z,UTC,active,release freeze
+CF-003,ci-runner,freeze,14.11.2026 16:00,14.11.2026 18:00,CET,active,load test
+CF-012,spaces,freeze,2026-11-14T20:00:00Z,2026-11-14T23:00:00Z,UTC,active,migration
+CF-017,spaces,freeze,2026-11-14T10:00:00Z,2026-11-14T16:00:00Z,UTC,cancelled,x
+""")))
+assert earliest_slot(_cal, "spaces", "2026-11-14T07:30:00Z")[0] == "2026-11-14T10:00:00Z"
+assert earliest_slot(_cal, "ci-runner", "2026-11-14T07:30:00Z") == ("2026-11-14T12:00:00Z", ["CF-013"])
+assert earliest_slot(_cal, "vault", "2026-11-14T07:30:00Z")[0] == "2026-11-14T08:00:00Z"
+print("earliest_slot ok")
