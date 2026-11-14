@@ -23,3 +23,12 @@ Jeder Kandidat ist zugleich ein **Guardrail-Testfall**. Unsere Verteidigung muss
 ## Status / offen
 - **Noch nichts eingereicht.** `POST/PATCH /payloads` erst auf ausdrückliche Freigabe.
 - Dev-Slots: 3. Ablauf nach Freigabe: einreichen → halbstündlich `analyze_payloads.py` → schwächsten ersetzen → bestes ~16:45 in den Final.
+
+## Update ~11:52 — eingereicht (Dev)
+Alle 3 Kandidaten per `POST /payloads` eingereicht, **status: accepted**, stage dev, aktiv ab 11:30 UTC.
+Dev-Slots jetzt 3/3 voll. IDs (siehe `breaker/submitted.json`):
+- `t02-p1` = url_exfil (Daten-Mimikry)
+- `t02-p2` = url_exfil (Policy-Spoof)
+- `t02-p3` = frame_agent (Autoritäts-Verwechslung)
+
+Nächster Schritt: halbstündlich `python3 breaker/analyze_payloads.py` → Platzierungen/Hits, schwächsten ersetzen, bestes ~16:45 in den Final (`PATCH {stage:"final"}`).
