@@ -545,7 +545,9 @@ def _solve(client: ArenaClient, run_id: str, task: Task, tool_specs: list[ToolSp
     delegated = bool(tickets) and (route is None or route["ticket_queue"])
     policy = state["policy"] = _build_policy(client, run_id, task, paths, pre, route, mutating,
                                              task.instruction + "".join("\n" + x[2] for x in tickets if delegated))
-    tools = [t for t in to_openai_tools(tool_specs) if t["function"]["name"] not in mutating - policy.allowed] \
+    _topic = policy.authorised_text or task.instruction
+    tools = [t for t in to_openai_tools(tool_specs) if t["function"]["name"] not in mutating - policy.allowed
+             and not (t["function"]["name"] in PLATFORM_TOPICS and not re.search(PLATFORM_TOPICS[t["function"]["name"]], _topic, re.I))] \
         + [VIEW_IMAGE_TOOL, DOWNLOAD_FILE_TOOL, FILTER_ROWS_TOOL] + _special_tools(policy.authorised_text or task.instruction) \
         + [INCIDENT_TOOL, SUBMIT_TOOL]
     # The rule files and the open ticket come with the task: reading them cost 2-4 model calls per task.
@@ -609,10 +611,10 @@ def _solve(client: ArenaClient, run_id: str, task: Task, tool_specs: list[ToolSp
     # Which breach-notification clause is in force for a customer: computed in code (base clause, signed amendments
     # effective by now, the latest wins); run_Go_5ItDDXKIl t25/t37 and run_32SoTk4qmWz4 t36 took a future or unsigned one.
     if re.search(r"notif\w*[^.]{0,60}(deadline|window|hours)|(deadline|window)[^.]{0,40}notif", policy.authorised_text or "", re.I) \
-            and re.search(r"in force|right now|currently|applies|applicable", policy.authorised_text or "", re.I):
+            and re.search(r"in force|right now|currently|applies|applicable|agreement", policy.authorised_text or "", re.I):
         try:
             _p, _r, _v = _workspace(client, run_id, task.task_id, cfg, tracker)
-            ans, cites, expl = incident.agreement_terms(_r, _p, policy.authorised_text or "", _v)
+            ans, cites, expl = incident.agreement_terms(_r, _p, re.sub(r"[ \t]*\n[ \t]*", " ", policy.authorised_text or ""), _v)
         except Exception as e:  # noqa: BLE001
             ans, cites, expl = None, [], f"{type(e).__name__}: {e}"
         if ans:
@@ -977,6 +979,16 @@ SPECIAL_TOOLS = [
     (r"mcp|manifest|integration|server|tool description", "MCP_TOOL"),
     (r"domain|indicator|ioc|contact|destination|scan", "CONTACTS_TOOL"),
 ]
+
+
+# Read-only platform tools whose schema goes with a task only when its text touches their subject (base load per call).
+# The file map comes with every task, so `tree` is never needed; generous patterns, a miss only costs a detour.
+PLATFORM_TOPICS = {
+    "tree": r"(?!)",
+    "threat_intel": r"intel|indicator|\bioc|domain|threat|attack|malicious|exfil|incident|compromis",
+    "get_containment": r"contain|quarantin|rotat|revok|block|isolat|incident|compromis|ticket",
+    "access_path": r"access|path|chain|delegat|reach|permission|scope|capabilit|trifecta|grant|privilege",
+}
 
 
 def _special_tools(text: str) -> list[dict]:
