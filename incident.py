@@ -1153,3 +1153,53 @@ def agreement_terms(read: Callable[[str], bytes], paths: set[str], text: str,
     expl = (f"{org}: agreement {agr} ({doc}); base clause {clause(base)[0]} h; now {now}.\n" + "\n".join(notes)
             + f"\nIN FORCE NOW: {json.dumps(ans)}" + (f" (from {best[1]})" if best else " (base clause)"))
     return ans, src, expl
+
+
+# --- leaked tokens: full values in a dump against the inventory's hash fingerprints ---------------------------------
+def leak_check(read: Callable[[str], bytes], paths: set[str], text: str) -> tuple[list[str], list[dict], str]:
+    """Every value in the dump(s) the task names (or text files under /intel) is hashed (SHA-256) and compared with the
+    fingerprint column of the token inventory (hex prefix). A value broken across lines (continuation indented) is
+    joined; a truncated value (… or ...) cannot match, so only values leaked in full count."""
+    import hashlib
+    fp = next((p for p in sorted(paths) if re.search(r"fingerprint|token_hash", p.lower()) and p.lower().endswith(".csv")), "")
+    if not fp:
+        return [], [], "no fingerprint table"
+    rows = list(csv.reader(io.StringIO(read(fp).decode("utf-8-sig", "replace"))))
+    if len(rows) < 2:
+        return [], [], "empty fingerprint table"
+    hcol = next((i for i in range(len(rows[0])) if all(re.fullmatch(r"[0-9a-f]{8,64}", (r[i] if i < len(r) else "").strip().lower())
+                                                        for r in rows[1:] if r)), None)
+    if hcol is None:
+        return [], [], "no hash column"
+    fps = {r[hcol].strip().lower(): r[0].strip() for r in rows[1:] if r}
+    named = [p for p in re.findall(r"/[\w./-]+", text) if p in paths and not p.endswith(".csv")]
+    dumps = named or [p for p in sorted(paths) if p.startswith("/intel/") and p.lower().endswith((".txt", ".md", ".log"))]
+    found: dict[str, tuple[str, int]] = {}
+    for d in dumps:
+        try:
+            lines = read(d).decode("utf-8", "replace").splitlines()
+        except Exception:  # noqa: BLE001
+            continue
+        cands: list[tuple[str, int]] = []
+        for n, line in enumerate(lines, 1):
+            toks = re.findall(r"[A-Za-z0-9_\-+/=.]{8,}", line)
+            cands += [(t.strip("."), n) for t in toks]
+            nxt = lines[n] if n < len(lines) else ""
+            if toks and re.match(r"\s+\S", nxt) and line.rstrip().endswith(toks[-1]):  # value continued on the next line
+                cont = re.match(r"\s+([A-Za-z0-9_\-+/=]+)", nxt)
+                if cont:
+                    cands.append((toks[-1] + cont.group(1), n))
+            for m in re.finditer(r"[:=]\s*([^\s\"',;]{8,})", line):
+                cands.append((m.group(1), n))
+        for v, n in cands:
+            h = hashlib.sha256(v.encode()).hexdigest()
+            for pre, tid in fps.items():
+                if h.startswith(pre) and tid not in found:
+                    found[tid] = (d, n)
+    ids = sorted(found)
+    src = sorted({found[i][0] for i in ids})
+    cites = [{"path": p} for p in src] + [{"path": fp, "record": i} for i in ids]
+    expl = (f"Values in {json.dumps(dumps)} hashed (SHA-256) and compared with {fp} column {rows[0][hcol]!r}; joined line "
+            f"continuations, truncated values cannot match. Leaked in full: {json.dumps(ids)}"
+            + "".join(f"\n- {i}: {found[i][0]} line {found[i][1]}" for i in ids))
+    return ids, cites, expl
