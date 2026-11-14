@@ -83,7 +83,7 @@ nur bei passendem Thema (`SPECIAL_TOOLS` in agent.py), Request-Log-Policy als Fi
 | Run | Code | Accuracy | Kosten | final |
 |---|---|---|---|---|
 | run_m3AU4AsnXI6B | 4de7e02 (Demo-Build) | 0.899 | $0.62 | 0.577 |
-| run 12 (lief beim Schreiben) | 2a6d810 | siehe Dashboard / `GET /runs/<id>` | | |
+| **run_07oOLC4jn7Vg** | **2a6d810** | **0.938** | **$0.32** | **0.643** (bester Run, C 0.37) |
 
 **Kosten zählen die Hälfte:** `final = A · (0.5 + 0.5 · C)`, C logarithmisch zwischen Floor und Cap des Feldes. Halbe Kosten
 ≈ +0.15–0.2 auf C ≈ +0.08 final. Unser C liegt bei 0.28–0.34: hier ist am meisten zu holen.

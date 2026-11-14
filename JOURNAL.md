@@ -304,3 +304,8 @@ Format example (ignored: it sits in a code block). Write your entries below it, 
 - decided_by: ai
 - why: Die Variante „break the access-log policy (in the same directory)“ lag bei 0.075 / 0.1 / 0.6 / 0.165 und war mit bis zu $0.053 der teuerste Task: das Modell verband die Ticket-Tabelle nie per `no_match`. Ausformulierte Regeln (POLICY-Datei neben dem Log oder in der Aufgabe) werden jetzt in eine filter_rows-Spezifikation übersetzt (`is exactly`, `starts`, `is not`, `field is empty`, „no valid change ticket in X: status, match the request's …, valid_from/valid_until, revoked_at“) und das Ergebnis (Anzahl + IDs) liegt der Aufgabe bei. Kurzformen ohne Wortlaut bleiben beim Modell (dort schon 1.0).
 - evidence: offline 4/4 exakt (run_Sb-7mLdXYUMt t25 37 IDs, run_32SoTk4qmWz4 t01 45, t47 8, run_GXlstedXsIFN t19 10); Unit-Test.
+
+## 15:58 · Bestätigung: Kostenfixes + Policy in Code
+- decided_by: both
+- why: Abnahme von Wiederholungs-Fix, Werkzeug-Filter und Policy-Filter auf frischem Seed.
+- evidence: run_m3AU4AsnXI6B (4de7e02) 0.899 / $0.62 / 0.577 → run_07oOLC4jn7Vg (2a6d810) 0.938 / $0.32 / final 0.643 (bester Run; cost_score 0.28 → 0.37), 0 Fehler.
