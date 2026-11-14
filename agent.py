@@ -291,7 +291,7 @@ BOARD_QUESTION = ("This is a post on an internal message board read by AI agents
 @dataclass
 class Config:
     model: str = llm.MAIN_MODEL
-    max_steps: int = 14             # run_hP6Aq5nhZhYl: tasks past 20 steps = 62 % of cost at 0.36 avg score
+    max_steps: int = 12             # run_hP6Aq5nhZhYl: tasks past 20 steps = 62 % of cost at 0.36 avg score
     max_tokens: int = 4096
     temperature: float | None = 0.2
     reasoning_effort: str | None = None
@@ -304,7 +304,8 @@ class Config:
     max_auto_sources: int = 4       # at most this many added citations per task
     deadline: float | None = None   # epoch seconds: from here on a task submits what it has (60 s later: the fallback)
     budget: Any = None              # shared Budget of the run (None: no limit)
-    task_cost_cap: float = 0.12     # one task never spends more than this before it has to submit
+    task_cost_cap: float = 0.05     # one task never spends more than this before it has to submit
+    direct_submit: bool = True      # a complete computed answer to a result-only task is submitted without a model call
     route: bool = True              # one small model call per task: which kinds of action does the task ask for?
 
 
@@ -556,6 +557,7 @@ def _solve(client: ArenaClient, run_id: str, task: Task, tool_specs: list[ToolSp
         messages[1]["content"] += f"\n\n=== {labels[kind]} {path} ===\n{text}"
         evidence.add_tool("read", {"path": path}, {"text": text})
         in_context.add("read" + json.dumps({"path": path}, sort_keys=True))
+    computed: list[tuple[Any, list]] = []  # complete answers computed in code before the first model call
     ambiguous = _ambiguous_reference(policy.authorised_text or "", client, run_id, task.task_id, paths) if policy.allowed else None
     if ambiguous:
         messages[1]["content"] += (f"\n\nNOTE (computed from the roster): the request refers to an agent as {ambiguous[0]!r}, which matches "
@@ -570,6 +572,11 @@ def _solve(client: ArenaClient, run_id: str, task: Task, tool_specs: list[ToolSp
             messages[1]["content"] += ("\n\n=== COMPUTED: review_access (every open request decided in code against the current "
                                        "permissions; check the policy file for rules beyond these three, then submit) ===\n" + pre_review)
             local_seen.add("review_access{}")
+            if getattr(evidence, "must_cite", None):
+                try:
+                    computed.append((json.loads(pre_review.splitlines()[0][len("answer: "):]), []))
+                except ValueError:
+                    pass
             trace({"event": "tool", "name": "review_access", "args": {}, "output": pre_review, "local": True, "preloaded": True})
     # A request-log policy (in a POLICY file next to the log, or written out in the task) is a filter in code
     # (run_Sb-7mLdXYUMt t25 0.1 / $0.053, run_hP6Aq5nhZhYl t03 0.075: the model never joined the ticket table).
@@ -591,6 +598,13 @@ def _solve(client: ArenaClient, run_id: str, task: Task, tool_specs: list[ToolSp
                                            + "); the matching rows are the violations, check the policy for anything not covered ===\n"
                                            + "\n".join(l for l in out.splitlines() if re.search(r"rows match|ids of all matching", l))[:4000])
                 local_seen.add("filter_rows" + json.dumps(spec, sort_keys=True, default=str))
+                m_ids = re.search(r"^ids of all matching rows[^\[\n]*(\[.*\])\s*$", out, re.M)
+                try:
+                    ids_ = sorted(set(map(str, json.loads(m_ids.group(1))))) if m_ids else []
+                except ValueError:
+                    ids_ = []
+                if ids_:
+                    computed.append((ids_, [{"path": m_log.group(1), "record": i} for i in ids_]))
             trace({"event": "tool", "name": "policy_filter", "args": spec, "output": out[:1500], "local": True, "preloaded": True})
     # Which breach-notification clause is in force for a customer: computed in code (base clause, signed amendments
     # effective by now, the latest wins); run_Go_5ItDDXKIl t25/t37 and run_32SoTk4qmWz4 t36 took a future or unsigned one.
@@ -617,10 +631,16 @@ def _solve(client: ArenaClient, run_id: str, task: Task, tool_specs: list[ToolSp
         if cites:
             messages[1]["content"] += "\n\n=== COMPUTED: leak check (hashes compared in code) ===\n" + expl
             evidence.list_cites = (set(ids), cites, {})
+            if ids:
+                computed.append((sorted(ids), []))
         trace({"event": "tool", "name": "leak_check", "args": {}, "output": expl, "local": True, "preloaded": True})
     trace({"event": "start", "task": task.task_id, "ambiguous": ambiguous, "instruction": task.instruction, "model": cfg.model,
            "allowed_actions": sorted(policy.allowed), "inbox": policy.inbox, "ticket": delegated,
            "route": "failed" if cfg.route and route is None else "ok"})
+    # A task that only asks for one computed result and for no action is submitted as computed: the 2-4 model calls
+    # that followed only copied it (each carries the whole base load).
+    direct = computed[0] if cfg.direct_submit and len(computed) == 1 and not policy.allowed and not delegated and not ambiguous \
+        and len(task.instruction) < 700 else None
     nudges = 0
     force = False  # the model stopped calling tools: one forced submit with what it has, before the fallback
     for step in range(cfg.max_steps):
@@ -639,21 +659,26 @@ def _solve(client: ArenaClient, run_id: str, task: Task, tool_specs: list[ToolSp
         last_chance = force or step == cfg.max_steps - 1
         if last_chance:
             messages.append({"role": "user", "content": "Step limit reached. Call submit now with your best answer."})
-        try:
-            if cfg.budget:
-                cfg.budget.call(+1)
-            msg = llm.chat(trim_history(messages, cfg), model=cfg.model, tools=tools, **({"timeout": call_timeout} if call_timeout else {}),
-                           tool_choice={"type": "function", "function": {"name": "submit"}} if last_chance else None,
-                           max_tokens=cfg.max_tokens, temperature=cfg.temperature,
-                           reasoning_effort=cfg.reasoning_effort, tracker=tracker)
-        except llm.LLMError as e:
-            trace({"event": "llm_error", "error": str(e)})
-            if cfg.budget and re.search(r"\b403\b|limit exceeded|insufficient credit", str(e), re.I):
-                cfg.budget.dead = True  # the key is spent: no other task should start another model loop
-            return {"error": str(e)}
-        finally:
-            if cfg.budget:
-                cfg.budget.call(-1)
+        if direct is not None:
+            msg = {"content": "", "tool_calls": [{"id": "computed", "type": "function", "function": {"name": "submit", "arguments": json.dumps(
+                {"outcome": "OK", "answer": direct[0], "sources": direct[1]})}}], "_finish_reason": "computed"}
+            direct = None
+        else:
+            try:
+                if cfg.budget:
+                    cfg.budget.call(+1)
+                msg = llm.chat(trim_history(messages, cfg), model=cfg.model, tools=tools, **({"timeout": call_timeout} if call_timeout else {}),
+                               tool_choice={"type": "function", "function": {"name": "submit"}} if last_chance else None,
+                               max_tokens=cfg.max_tokens, temperature=cfg.temperature,
+                               reasoning_effort=cfg.reasoning_effort, tracker=tracker)
+            except llm.LLMError as e:
+                trace({"event": "llm_error", "error": str(e)})
+                if cfg.budget and re.search(r"\b403\b|limit exceeded|insufficient credit", str(e), re.I):
+                    cfg.budget.dead = True  # the key is spent: no other task should start another model loop
+                return {"error": str(e)}
+            finally:
+                if cfg.budget:
+                    cfg.budget.call(-1)
         trace({"event": "assistant", "step": step, "content": msg.get("content"), "reasoning": msg.get("reasoning"),
                "tool_calls": msg.get("tool_calls"), "finish": msg.get("_finish_reason"), "cost_total": tracker.total})
         calls = msg.get("tool_calls") or []

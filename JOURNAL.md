@@ -309,3 +309,9 @@ Format example (ignored: it sits in a code block). Write your entries below it, 
 - decided_by: both
 - why: Abnahme von Wiederholungs-Fix, Werkzeug-Filter und Policy-Filter auf frischem Seed.
 - evidence: run_m3AU4AsnXI6B (4de7e02) 0.899 / $0.62 / 0.577 → run_07oOLC4jn7Vg (2a6d810) 0.938 / $0.32 / final 0.643 (bester Run; cost_score 0.28 → 0.37), 0 Fehler.
+
+## 16:07 · Berechnete Antworten direkt abgeben; max_steps 12, task_cost_cap 0.05
+- decided_by: both (Mensch: Kosten zuerst, Reihenfolge der Hebel; KI: Umsetzung)
+- why: C zählt die Hälfte. Bei Access-Review, Request-Log-Policy (ausformulierte Regeln) und Leak-Check liegt die fertige Antwort samt Zitaten schon vor dem ersten Modell-Call vor; das Modell kopierte sie nur noch in 2–4 Calls à ~6k Tokens. Jetzt gibt der Harness sie als synthetischen `submit` ab (derselbe Guard- und Zitat-Pfad wie beim Modell), wenn genau eine Rechnung gegriffen hat, die Aufgabe keine Aktion erlaubt, kein Ticket delegiert ist und die Instruktion kurz ist (< 700 Zeichen). Lehnt die Plattform ab, übernimmt das Modell wie bisher. Dazu max_steps 14 → 12 und task_cost_cap 0.12 → 0.05: lange Tasks waren fast immer verloren.
+- rejected: manifest_audit / board_triage / capabilities vorab aufrufen (brauchen vom Modell gewählte Argumente; ohne Messung zu riskant so kurz vor der Abgabe); agreement_terms direkt (Antwortform hängt an der Frage)
+- evidence: offline run_l936GJFKAIXt (leerer Run): 5/5 direkt abgegebene Antworten exakt (t10, t17 Policy; t24, t31 Access-Review; t29 Leak), Zitate 35/35, 9/9, 4/4 (+1), 6/6 (+1), 3/3. eval/offline/direct_check.py. Alle Test-Suites grün. Voller Run: siehe nächster Eintrag.
