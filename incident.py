@@ -975,7 +975,7 @@ def _rule_flags(text: str) -> tuple[bool | None, bool | None]:
                  r"never left|leave (the )?blocked[^.]*out|blocked[^.]*(left out|excluded|ignored)|exclude blocked|ignore blocked", t, re.I):
         only_ok = True
     once = None
-    if re.search(r"counts? twice|add(s)? up|every time it|each time it|summed|count every transfer", t, re.I):
+    if re.search(r"counts? twice|add(s)? up|every time it|each time it|summed|\bsum (them|it|all)\b|do not merge|don't merge|count every transfer", t, re.I):
         once = False
     if re.search(r"counted once|count(s|ed)? only once|single time|only once|once across|distinct|unique|deduplicat", t, re.I):
         once = True

@@ -231,3 +231,9 @@ Format example (ignored: it sits in a code block). Write your entries below it, 
 - why: run_Go_5ItDDXKIl t25/t37 je 0.6: die Vision beantwortete nur die Frage des Modells und ließ „Effective from 2026-11-21 … until then the existing clause remains in force“ weg, also nahm das Modell die nicht gültige 120-h-Frist. Modell-Aufrufe von view_image liefern jetzt erst die wörtliche Transkription, dann die Antwort (Tokenlimit Vision 700 -> 1200). Kosten: keep_small_chars 6000 -> 4000, keep_full_outputs 3 -> 2; damit die Wiederholungssperre nichts unterschlägt, bekommt ein wiederholter lokaler Aufruf, dessen Ausgabe gekürzt sein kann, sein volles Ergebnis zurück.
 - rejected: max_steps senken (trifft die schweren, aber lösbaren Tasks)
 - evidence: offline t37: Transkription enthält jetzt Gültigkeitsdatum ($0.0002). Bestätigung im nächsten vollen Run.
+
+## 15:11 · Bilder, die die Regeldateien nennen, kommen transkribiert mit der Aufgabe
+- decided_by: ai
+- why: run_32SoTk4qmWz4 t35 (volle Containment) 0 wegen `rotation_in_freeze`: Puffer (60 min) und bindende Dienste (Konsumenten) stehen nur auf der fotografierten Standing Order, die das Runbook nennt; das Modell las sie nicht und rief earliest_slot mit gap_min 0 auf. `_preload` transkribiert jetzt bis zu zwei Bilder, die AGENTS.md/Runbook namentlich nennen (Cache pro Blob-Hash, ~$0.0002 einmalig), und legt sie als „FILE NAMED IN THE RULES“ bei. Dazu erkennt die Zählregel „Do not merge … Sum them“ als aufsummieren.
+- rejected: Puffer in Code aus dem Bild parsen (Wortlaut variiert; das Modell setzt ihn mit dem Text zuverlässig)
+- evidence: offline t35: Transkription vollständig; earliest_slot mit gap 60 und Konsumenten-Diensten = erwartete 2026-11-15T00:00:00Z. Run 7 (81afee1, Seed neu): 0.863 / $0.40 / 0.579.
