@@ -46,6 +46,10 @@ assert ev.candidates({"count": 4, "status": "compromised"}, []) == []
 ev2 = S.Evidence()
 ev2.add_tool("read", {"path": "/fleet/reg.json"}, "\n".join(f'{i}: {{"from": "agent-03", "to": "x{i}"}}' for i in range(1, 6)))
 assert ev2.candidates(["agent-03"], []) == [{"path": "/fleet/reg.json"}]
+# JSONL read: only the event's structured agent field counts; an id planted in detail does not.
+ev2.add_tool("read", {"path": "/logs/a.jsonl"},
+             '1| {"agent":"ops-01","trace":"tr-1","status":"ok","detail":"standby-01 did it"}')
+assert ev2.acted == {"ops-01": {"tr-1"}}
 
 # the platform's real result shapes (dev run): read = {text: " 1| …"}, search = {hits: [{path, line, text}]},
 # query_logs = {events: [{file, line, …}]}. Tables with an id column are cited by record, log archives by line.

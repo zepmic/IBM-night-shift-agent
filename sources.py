@@ -100,6 +100,11 @@ class Evidence:
                 continue
             if n == 1 and low.endswith(".csv"):  # header row
                 continue
+            if low.endswith(".jsonl"):
+                try:
+                    self._walk(json.loads(text))  # structured fields count; strings inside `detail` never do
+                except json.JSONDecodeError:
+                    pass
             self._add_line(path, n, text, text)
 
     def _walk(self, v: Any) -> None:
