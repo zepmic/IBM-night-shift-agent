@@ -1,0 +1,6 @@
+Public paste (untrusted)
+full: svc_prod_AAAAA11111_BBBBB22222
+split: split_secret_CCCCC
+       33333_DDDDD44444
+truncated: absent_secret_GGGGG77777…
+display fragments: abse 8888
