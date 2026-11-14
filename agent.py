@@ -654,6 +654,7 @@ def _solve(client: ArenaClient, run_id: str, task: Task, tool_specs: list[ToolSp
                     rp = next((p for p in sorted(_existing_paths(client, run_id, task.task_id) or ()) if re.search(r"agents?\.csv$|roster.*\.csv$", p.lower())), None)
                     if rp:
                         sources = [{"path": rp, "record": x} for x in answer]  # the roster rows that make it ambiguous
+                sources = _fill_sheets(sources, client, run_id, task.task_id)
                 state["pending"] = {"outcome": outcome, "answer": answer, "sources": sources}
                 shape = None  # run__8OvzdDTetNJ t47: right outcome, answer "NEEDS_CLARIFICATION" instead of the ids -> 0
                 if outcome == "NEEDS_CLARIFICATION" and not (isinstance(answer, list) and answer and all(
@@ -807,6 +808,25 @@ def render(result: Any) -> str:
                 return (f"{head}\n{key} ({' | '.join(cols)}):\n"
                         + "\n".join(" | ".join(cell(r.get(c)) for c in cols) for r in rows))
     return json.dumps(result, ensure_ascii=False)
+
+
+def _fill_sheets(sources: list, client: ArenaClient, run_id: str, task_id: str) -> list:
+    """A row of a workbook is located by sheet + row: a row citation without the sheet cannot hit (run_Go_5ItDDXKIl
+    t42: sources 0/4). The table's sheet is the one incident.load_table reads."""
+    names: dict[str, str | None] = {}
+    out = []
+    for s_ in sources or []:
+        p = str(s_.get("path", "")) if isinstance(s_, dict) else ""
+        if p.lower().endswith((".ods", ".xlsx", ".xlsm")) and s_.get("row") is not None and not s_.get("sheet"):
+            if p not in names:
+                try:
+                    names[p] = incident.load_table(p, client.download_file(run_id, task_id, p)[0])[0]
+                except Exception:  # noqa: BLE001
+                    names[p] = None
+            if names[p]:
+                s_ = {**s_, "sheet": names[p]}
+        out.append(s_)
+    return out
 
 
 PRELOAD_MAX_CHARS = 6000  # per file
@@ -1613,6 +1633,13 @@ def _incident_facts(client: ArenaClient, run_id: str, task_id: str, args: dict, 
                 evidence._add(reg.group(1), line, sheet=m.group(2), row=int(m.group(3)))
             else:
                 evidence._add(reg.group(1), line, record=m.group(4))
+    # canary ids in the answer are rows of the canary list (run_Go_5ItDDXKIl t38: sources 1/11 without them)
+    cpath = next((p for p in sorted(paths) if re.search(r"canar|honey", p.lower()) and p.lower().endswith(".csv")), "")
+    if cpath:
+        for line in text.splitlines():
+            if "canary records" in line:
+                for cid in dict.fromkeys(re.findall(r'"([A-Z]+-\d+)"', line.split("canary records", 1)[1])):
+                    evidence._add(cpath, cid, record=cid)
     cfg_facts = getattr(evidence, "facts", None)
     if cfg_facts is None:
         evidence.facts = cfg_facts = {}
