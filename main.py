@@ -54,6 +54,7 @@ def main() -> int:
     p.add_argument("--temperature", type=float, default=0.2)
     p.add_argument("--reasoning-effort", choices=["none", "low", "medium", "high"], default=None)
     p.add_argument("--jev-inbox-check", action="store_true", help="example: Jev flags injection-like content in read results")
+    p.add_argument("--no-auto-sources", action="store_true", help="submit only the model's own citations (A/B against sources.py)")
     p.add_argument("--prefetch", action="store_true", help="download every distinct file of the run once at start (blob cache)")
     p.add_argument("--yes", action="store_true", help="do not ask for confirmation on --kind final")
     a = p.parse_args()
@@ -108,7 +109,8 @@ def main() -> int:
             print(f"prefetch skipped: {e}")
 
     cfg = Config(model=a.model, max_steps=a.max_steps, max_tokens=a.max_tokens, temperature=a.temperature,
-                 reasoning_effort=a.reasoning_effort, jev_inbox_check=a.jev_inbox_check)
+                 reasoning_effort=a.reasoning_effort, jev_inbox_check=a.jev_inbox_check,
+                 auto_sources=not a.no_auto_sources)
     tracker = llm.CostTracker()
     out_dir = Path("runs") / run.run_id
     out_dir.mkdir(parents=True, exist_ok=True)

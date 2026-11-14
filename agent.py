@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass
 from typing import Any, Callable
 
+import sources as srcs
 from arena import llm
 from arena.client import ArenaClient, ArenaError, Task, ToolSpec
 
@@ -41,7 +42,8 @@ Outcomes for submit
 
 Sources: cite the documents that support your answer. Each source = {path, plus ONE locator}: page (PDF), record id
 (csv/json), sheet+row (xlsx/ods), paragraph (docx/odt), line (text, markdown, jsonl). Images are cited by path only.
-Cite only what you actually used; spraying many citations is penalised.
+Cite every file the answer rests on (the log lines AND the registry / change-record entries that decided it), each with
+the locator shown in the tool output. Cite only what you actually used; spraying many citations is penalised.
 Be efficient: every token costs money. Do not re-read files you already read."""
 
 SUBMIT_TOOL = {
@@ -113,6 +115,8 @@ class Config:
     old_output_chars: int = 300     # older ones are cut to this length
     max_output_chars: int = 8000    # hard cap per tool output
     jev_inbox_check: bool = False   # example: Jev flags suspicious inbox/report content
+    auto_sources: bool = True       # add the places in read tool results that carry the answer's values (sources.py)
+    max_auto_sources: int = 4       # at most this many added citations per task
 
 
 def to_openai_tools(specs: list[ToolSpec]) -> list[dict]:
@@ -273,6 +277,7 @@ def _solve(client: ArenaClient, run_id: str, task: Task, tool_specs: list[ToolSp
         {"role": "user", "content": f"Task {task.task_id}{f' (level {task.level})' if task.level else ''}:\n\n{task.instruction}"},
     ]
     trace({"event": "start", "task": task.task_id, "instruction": task.instruction, "model": cfg.model})
+    evidence = srcs.Evidence()
     nudges = 0
     force = False  # the model stopped calling tools: one forced submit with what it has, before the fallback
     for step in range(cfg.max_steps):
@@ -312,6 +317,10 @@ def _solve(client: ArenaClient, run_id: str, task: Task, tool_specs: list[ToolSp
             if name == "submit":
                 outcome, answer = args.get("outcome", "OK"), normalize_answer(args.get("answer", ""))
                 sources = clean_sources(args.get("sources"))
+                if cfg.auto_sources:
+                    sources, report = srcs.finalize(sources, answer, evidence, _existing_paths(client, run_id, task.task_id),
+                                                    cfg.max_auto_sources)
+                    trace({"event": "sources", **report})
                 state["pending"] = {"outcome": outcome, "answer": answer, "sources": sources}
                 try:
                     resp = client.submit(run_id, task.task_id, outcome, answer, sources)
@@ -331,10 +340,12 @@ def _solve(client: ArenaClient, run_id: str, task: Task, tool_specs: list[ToolSp
                         state["final"] = True  # the platform will not take a submit for this task any more
                         return {"error": str(e)}  # e.g. already submitted / deadline; a 400 (bad sources) goes back to the model
                     continue
-                trace({"event": "submit", "args": args, "response": resp})
+                trace({"event": "submit", "args": {**args, "answer": answer, "sources": sources}, "response": resp})
                 return resp
             if name == "view_image":
                 text = _view_image(client, run_id, task.task_id, args, cfg, tracker)
+                if not text.startswith("ERROR"):
+                    evidence.add_image(str(args.get("path", "")), text)
                 trace({"event": "view_image", "args": args, "output": text[:1500]})
                 messages.append({"role": "tool", "tool_call_id": call["id"], "content": text})
                 continue
@@ -342,6 +353,7 @@ def _solve(client: ArenaClient, run_id: str, task: Task, tool_specs: list[ToolSp
                 text = _download_file(client, run_id, task.task_id, args)
                 if len(text) > cfg.max_output_chars:
                     text = text[:cfg.max_output_chars] + "... [truncated; download and parse locally for the rest]"
+                evidence.add_extraction(str(args.get("path", "")), text)
                 trace({"event": "download_file", "args": args, "output": text[:1500]})
                 messages.append({"role": "tool", "tool_call_id": call["id"], "content": text})
                 continue
@@ -351,6 +363,8 @@ def _solve(client: ArenaClient, run_id: str, task: Task, tool_specs: list[ToolSp
                 text = json.dumps(res.get("result") if res.get("ok") else {"error": res.get("error")}, ensure_ascii=False)
             except ArenaError as e:
                 text = json.dumps({"error": str(e)})
+            if res.get("ok"):
+                evidence.add_tool(name, args, res.get("result"), cfg.max_output_chars)
             if cfg.jev_inbox_check and res.get("ok") and name == "read" and re.search(r"inbox|report|board|artifact|quarantine|intel", str(args.get("path", "")), re.I):
                 text = _jev_annotate(text, cfg, tracker)
             if len(text) > cfg.max_output_chars:
@@ -358,6 +372,14 @@ def _solve(client: ArenaClient, run_id: str, task: Task, tool_specs: list[ToolSp
             trace({"event": "tool", "name": name, "args": args, "output": text[:2000]})
             messages.append({"role": "tool", "tool_call_id": call["id"], "content": text})
     return {"error": "step limit reached without submission"}
+
+
+def _existing_paths(client: ArenaClient, run_id: str, task_id: str) -> set[str] | None:
+    """Paths of the task's workspace (manifest: a Task API GET, no model call), or None when it is not available."""
+    try:
+        return set(client.task_manifest(run_id, task_id)) or None
+    except Exception:  # noqa: BLE001 - validation is optional
+        return None
 
 
 def _view_image(client: ArenaClient, run_id: str, task_id: str, args: dict, cfg: Config, tracker: llm.CostTracker) -> str:
