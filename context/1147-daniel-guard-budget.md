@@ -5,7 +5,7 @@
 Branch `daniel/fallback-eval`, Commit `d14c259`. **Offline und im Image getestet, noch in keinem Dev-Run gelaufen.**
 
 ## Budget-Stand (aus `GET /runs`, 11:47)
-4 Dev-Runs des Teams, zusammen **$0.56 von $15**. Der zweite Fable (B4) und ich fahren Runs nicht gleichzeitig – wer einen Run startet, schreibt es vorher in den Team-Chat.
+4 Dev-Runs des Teams, zusammen **$0.56 von $15**. Bitte nur ein Dev-Run gleichzeitig: die Plattform misst Kosten als Key-Verbrauch zwischen Start und Finish, parallele Runs verfälschen sich gegenseitig.
 
 ## Was die Prüfung abfängt (`tests/test_guard.py`, gezählt werden gesendete Requests)
 | Angriff / Fehler | Verhalten |
