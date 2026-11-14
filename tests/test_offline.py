@@ -262,3 +262,8 @@ assert _inc.embedded_images(_doc) == [("image/png", _png)]
 assert _inc.read_embedded(lambda p: _doc.encode(), "/a.json#img0") == ("image/png", _png)
 assert _inc.read_embedded(lambda p: b"", "/a.json") is None
 print("image tickets + embedded images ok")
+
+# Counting rule: a runbook line that only names the question defers to the file it references
+assert _inc._rule_flags("What the gateway stopped never left: leave blocked attempts out. Count each record id a single time across all transfers.") == (True, True)
+assert _inc._rule_flags("Both successful and blocked transfers count; a record sent twice counts twice.") == (False, False)
+print("rule flags ok")
