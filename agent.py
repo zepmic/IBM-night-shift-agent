@@ -123,7 +123,13 @@ FILTER_ROWS_TOOL = {
         "name": "filter_rows",
         "description": "Exact filter over a table (.csv, or a sheet of an .xlsx/.ods), computed in code: returns the rows where "
                        "ALL conditions hold, with their record ids / sheet rows to cite. Use it for any rule over a table "
-                       "(counting, 'every row where ...'); without `where` it shows the columns and the first rows.",
+                       "(counting, 'every row where ...'); without `where` it shows the columns and the first rows. A rule that "
+                       "refers to ANOTHER table (\"has no valid ticket in tickets.csv: approved, same actor/resource/ticket, "
+                       "ts in [valid_from, valid_until), before revoked_at\") is ONE condition: {\"op\": \"no_match\", "
+                       "\"value\": {\"path\": \"/x/tickets.csv\", \"on\": {\"actor\": \"actor\", \"resource\": \"resource\", "
+                       "\"ticket\": \"ticket\"}, \"where\": [{\"column\": \"status\", \"op\": \"eq\", \"value\": \"approved\"}], "
+                       "\"within\": {\"column\": \"ts\", \"from\": \"valid_from\", \"until\": \"valid_until\"}, "
+                       "\"before\": {\"column\": \"ts\", \"other\": \"revoked_at\"}}}.",
         "parameters": {"type": "object", "properties": {
             "path": {"type": "string", "description": "workspace path of the .csv, .xlsx or .ods file"},
             "sheet": {"type": "string", "description": "optional: sheet name of an .xlsx (default: the first sheet)"},
@@ -450,6 +456,7 @@ def _solve(client: ArenaClient, run_id: str, task: Task, tool_specs: list[ToolSp
     ]
     evidence = srcs.Evidence()
     in_context: set[str] = set()  # read-only calls whose full output stays in the conversation (never trimmed)
+    local_seen: set[str] = set()  # local tool calls already answered (same args -> same result)
     # The workspace map up front (manifest: no model call, ~350 tokens): the baseline spent up to 15 steps looking for
     # a file whose directory the platform's truncated tree did not show.
     paths = _existing_paths(client, run_id, task.task_id)
@@ -533,6 +540,14 @@ def _solve(client: ArenaClient, run_id: str, task: Task, tool_specs: list[ToolSp
                 messages.append({"role": "tool", "tool_call_id": call["id"], "content": f"ERROR: {e}"})
                 continue
             key = name + json.dumps(args, sort_keys=True, default=str)
+            if key in local_seen:  # run_vO t03: the same filter_rows 7x, paging the table in between
+                messages.append({"role": "tool", "tool_call_id": call["id"], "content":
+                                 "You already made this exact call; the result would be identical. If the rule needs "
+                                 "another table (e.g. 'no valid ticket in X'), add a condition {\"op\": \"no_match\", "
+                                 "\"value\": {\"path\": X, \"on\": {...}, \"where\": [...], \"within\": {...}}} instead of reading "
+                                 "the table. Otherwise take the next step or submit."})
+                trace({"event": "repeat", "name": name, "args": args, "local": True})
+                continue
             if key in in_context:  # the baseline re-read the same files until the step limit
                 messages.append({"role": "tool", "tool_call_id": call["id"], "content":
                                  "You already made this exact call; its full result is above. Do not repeat calls: "
@@ -588,6 +603,7 @@ def _solve(client: ArenaClient, run_id: str, task: Task, tool_specs: list[ToolSp
                 messages.append({"role": "tool", "tool_call_id": call["id"], "content": text})
                 continue
             if name in ("filter_rows", "sha256", "earliest_slot", "capabilities"):
+                local_seen.add(key)
                 text = _filter_rows(client, run_id, task.task_id, args, evidence, cfg.max_output_chars) if name == "filter_rows" \
                     else _sha256(args) if name == "sha256" else _earliest_slot(client, run_id, task.task_id, args) \
                     if name == "earliest_slot" else _capabilities(client, run_id, task.task_id, args)
