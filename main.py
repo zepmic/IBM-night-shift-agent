@@ -49,7 +49,7 @@ def main() -> int:
     p.add_argument("--match", help="only tasks whose instruction matches this regex (case-insensitive), e.g. 'rotat|contain'")
     p.add_argument("--limit", type=int, help="solve at most N of the selected tasks")
     p.add_argument("--model", default=llm.MAIN_MODEL, help="chat model (default %(default)s; use a :free model to test)")
-    p.add_argument("--parallel", type=int, default=4)
+    p.add_argument("--parallel", type=int, default=6)  # full run at 6 took ~13 min; the final stops at 30
     p.add_argument("--max-steps", type=int, default=Config.max_steps)
     p.add_argument("--max-tokens", type=int, default=4096)
     p.add_argument("--temperature", type=float, default=0.2)
