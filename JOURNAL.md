@@ -219,3 +219,9 @@ Format example (ignored: it sits in a code block). Write your entries below it, 
 - why: run_iOrNuR6b10uJ t04/t19 je 0: Das Runbook sagt nur „ob blockierte zählen … steht auf der signierten Standing Order (/standing_order.jpg)“; `runbook_reading` las diesen Satz selbst als Regel („blocked attempts count“, „counts twice“) und kam auf 2528 statt 1992. Jetzt wird der Fragesatz („whether …“) nicht als Regel gelesen, die referenzierte Datei (Bild per Vision, die getippte Kopie bleibt außen vor) entscheidet. Neu: Records pro sendendem Agent unter dieser Lesart, mit Zeilen zum Zitieren (t04 „größter Anteil“).
 - rejected: Modell die Standing Order selbst lesen lassen (hat in t19 trotzdem falsch gezählt)
 - evidence: offline run_iOrNuR6b10uJ: t19 1992, t22 1685, t04 support-11 mit genau den erwarteten Zeilen 35/38/40. Alte Seeds unverändert (inc_check run_xVoe6Wvi24YP 9/10 wie vorher, run_gUwoFr3GqcYc 3/3). Voller Run nach dem Bild-Ticket-Fix (17de8e1): run_Go_5ItDDXKIl 0.918 / $0.41 / final 0.613 (vorher 0.512).
+
+## 15:06 · Zitate: Blattname bei Tabellenzeilen ergänzen, Kanarien-IDs zitierbar
+- decided_by: ai
+- why: run_Go_5ItDDXKIl: t42 (Breach-Notification) Antwort richtig, Quellen 0/4, weil die .ods-Zeilen ohne `sheet` zitiert wurden; t38 (Kanarien) Quellen 1/11, weil canaries.csv nie gelesen wurde (Faktenblatt rechnet sie). Jetzt ergänzt der Harness vor der Abgabe den Blattnamen (das Blatt, das load_table liest) und legt die Kanarien-IDs aus dem Faktenblatt als Records von canaries.csv in das Evidenz-Ledger.
+- rejected: Prompt-Regel „sheet immer angeben“ (stand schon im Faktenblatt)
+- evidence: offline: `_fill_sheets` auf run_Go_5ItDDXKIl t42 -> sheet 'transfers'. Bestätigung im nächsten vollen Run.
