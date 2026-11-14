@@ -9,14 +9,14 @@ r=json.load(open(f"runs/{rid}.json"))
 
 def family(ins, exp):
     if re.search(r"compromised (?:agents|in incident)|executed attacker-directed|list of compromised agents|full list of compromised", ins, re.I): return "comp"
-    if re.search(r"entry point|where INC.*started|patient zero|artifact carried the injected instruction", ins, re.I): return "entry"
+    if isinstance(exp,dict) and {"artifact","agent","at"} <= set(exp) and re.search(r"entry point|where INC.*started|patient zero|artifact carried the injected instruction", ins, re.I): return "entry"
     if re.search(r"\bcontain(?:ment)?\b", ins, re.I) and isinstance(exp,dict): return "contain"
     if re.search(r"how many .*customer records|number of exfiltrated customer records", ins, re.I) and isinstance(exp,dict): return "count"
     if re.search(r"chronological order|put these events.*order", ins, re.I): return "chronology"
     if re.search(r"canary|honeytoken", ins, re.I) and isinstance(exp,list): return "canary"
     if re.search(r"first exfiltrating transfer|first successful.*transfer", ins, re.I): return "firstdom" if isinstance(exp,str) and "." in exp else "first"
     if re.search(r"first to actually receive", ins, re.I): return "firstdom"
-    if re.search(r"(?:most|largest (?:share|number)).*exfiltrated.*records|exfiltrated.*records.*per agent", ins, re.I): return "largest"
+    if isinstance(exp,dict) and "owner_email" in exp and re.search(r"(?:most|largest (?:share|number)).*exfiltrated.*records|exfiltrated.*records.*per agent", ins, re.I): return "largest"
 
 def counting_rows(read, paths, tr):
     text="\n".join(read(p).decode("utf-8","replace") for p in paths if p.count("/")==1 and p.lower().endswith(".md"))
