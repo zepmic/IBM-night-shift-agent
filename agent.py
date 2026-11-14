@@ -308,6 +308,7 @@ class Config:
     direct_submit: bool = True      # a complete computed answer to a result-only task is submitted without a model call
     preload_facts: bool = True      # incident questions get the fact sheet with the task instead of asking for it
     preload_tables: bool = True     # action tasks get the small tables the rule files name with the task
+    plain_rules: bool = True        # root rule files without line numbers (never cited)
     route: bool = True              # one small model call per task: which kinds of action does the task ask for?
 
 
@@ -558,7 +559,10 @@ def _solve(client: ArenaClient, run_id: str, task: Task, tool_specs: list[ToolSp
     for path, kind, text in pre:
         if kind == "ticket" and not delegated:
             continue  # a ticket is part of the instruction only when the instruction says so
-        messages[1]["content"] += f"\n\n=== {labels[kind]} {path} ===\n{text}"
+        # Root rule files are never an expected citation (0 of 336 revealed dev tasks): they go without line numbers
+        # and blank lines, ~400 tokens less on every call. Files they name and tickets keep their numbers.
+        shown = re.sub(r"\n{2,}", "\n", re.sub(r"(?m)^\d+\| ?", "", text)) if kind == "rule" and cfg.plain_rules else text
+        messages[1]["content"] += f"\n\n=== {labels[kind]} {path} ===\n{shown}"
         evidence.add_tool("read", {"path": path}, {"text": text})
         in_context.add("read" + json.dumps({"path": path}, sort_keys=True))
     computed: list[tuple[Any, list]] = []  # complete answers computed in code before the first model call
