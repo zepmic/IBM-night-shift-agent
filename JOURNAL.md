@@ -1,5 +1,7 @@
 # Journal
 
+Aktuelle gemeinsame Übergabe: [Gestufte Evaluation, Routerfehler und Restbudget](context/1220-daniel-codex-stufen-eval.md).
+
 One entry per design decision, newest last: whenever someone on the team makes or overrides a design call, and when
 the coding agent makes one. Mark `decided_by` honestly; the content isn't scored. The journal feeds your 18:00 story
 page, and your upload needs at least one entry of your own to be eligible for prizes.
@@ -79,3 +81,9 @@ Format example (ignored: it sits in a code block). Write your entries below it, 
 - why: Am $3-Limit scheitert jeder Modell-Call (403), offene Tasks = 0. Gemeinsamer Wächter für parallele Tasks: solange Geld für je einen letzten Call pro offenem Task bleibt, normal; danach müssen alle abgeben; am Limit oder nach dem ersten Budgetfehler kein Modell-Call mehr, sofort Fallback-Submit. Antworten ohne Kostenangabe werden aus Tokens geschätzt, laufende Calls mitgezählt, pro Task Deckel $0.12. Nahe der Deadline bekommen Calls ein kurzes Timeout ohne Retries (Standard: 180 s × 5).
 - rejected: festes Budget pro Task ($3/48) – bestraft schwere Tasks, obwohl leichte Geld übrig lassen
 - evidence: tests/test_guard.py Abschnitt 9; im Final-Format ungemessen
+
+## 12:20 · Gestufte Messung und gemeinsamer main-Stand
+- decided_by: human
+- why: Mensch genehmigt maximal $1.50 für gestufte Tests mit Zwischenbilanz und danach den Merge aller Daniel-Änderungen auf main samt gemeinsam zugänglichem Kontext. Code unverändert gemessen; bekannte Routerfehler werden transparent mit übergeben.
+- rejected: alle 48 Tasks sofort ausführen (Kostenrisiko); Rohtraces und Dev-Erwartungen committen (bleiben gemäß Team-Regeln lokal, Plattform-Runs sind über IDs zugänglich)
+- evidence: run_LRi9gMHcHVDj: 3 Tasks, 0.9667; run_FRmvzRTmlI2k: 24 Tasks, 0.339125, spätere Tasks budgetbedingt verkürzt. 27/27 constraints_ok, konservativ $0.6671 verbraucht. Router blockiert erlaubte Rotation und Ticket-Draft; zweite Hälfte nicht gestartet. Merge ohne Konflikte, tests/test_offline.py und tests/test_guard.py grün; Details context/1220-daniel-codex-stufen-eval.md.

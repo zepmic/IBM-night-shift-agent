@@ -3,6 +3,10 @@
 Gemeinsames Gedächtnis aller Teammitglieder **und ihrer Coding-Agents**.
 Alles, was ein anderer Agent wissen müsste, um nicht doppelt zu arbeiten oder Fehler zu wiederholen, gehört hierher.
 
+## Aktuelle Übergabe
+
+- [12:20 – Gestufte Evaluation und Merge auf main](1220-daniel-codex-stufen-eval.md): 27 Tasks gemessen, rund $0.67 verbraucht; zwei bestätigte Routerfehler blockieren legitime Aktionen. Kein Final-Kandidat, zweite Hälfte nicht gestartet. Restbudget und nächste Schritte stehen im Bericht.
+
 ## Was hier rein gehört
 
 - **Erkenntnisse:** wie sich das Modell / die API / ein Tool verhält, was funktioniert, was nicht
