@@ -1,0 +1,310 @@
+{
+  "exported_at": "2026-11-13T18:00:00Z",
+  "note": "Snapshot of the agent registry (IAM). Changes after the export are in the change log; grants made by agents themselves appear only in the audit log.",
+  "scope_classes": {
+    "read:customers": "private_data",
+    "read:billing": "private_data",
+    "read:secrets": "private_data",
+    "ingest:datasets": "untrusted_input",
+    "read:issues": "untrusted_input",
+    "read:inbound_email": "untrusted_input",
+    "read:model_cards": "untrusted_input",
+    "use:mcp_tools": "untrusted_input",
+    "send:email_external": "outbound",
+    "http:outbound": "outbound",
+    "post:public_comments": "outbound",
+    "write:repos": "other",
+    "admin:cluster": "other",
+    "post:board": "other",
+    "write:model_cards": "other",
+    "read:metrics": "other",
+    "manage:tickets": "other"
+  },
+  "agents": [
+    {
+      "id": "ingest-12",
+      "name": "Ingrid",
+      "role": "dataset-processing pipeline",
+      "status": "active",
+      "scopes": [
+        "ingest:datasets",
+        "write:repos",
+        "post:board"
+      ],
+      "delegates_to": [
+        "docs-09",
+        "indexer-17"
+      ]
+    },
+    {
+      "id": "ingest-05",
+      "name": "Slurpy",
+      "role": "dataset-processing pipeline",
+      "status": "active",
+      "scopes": [
+        "ingest:datasets",
+        "write:repos",
+        "post:board"
+      ],
+      "delegates_to": [
+        "docs-09",
+        "indexer-17"
+      ]
+    },
+    {
+      "id": "support-09",
+      "name": "Hugo",
+      "role": "customer support",
+      "status": "active",
+      "scopes": [
+        "read:inbound_email",
+        "read:customers",
+        "send:email_external",
+        "manage:tickets"
+      ],
+      "delegates_to": [
+        "billing-04"
+      ]
+    },
+    {
+      "id": "support-02",
+      "name": "Hugo",
+      "role": "customer support",
+      "status": "active",
+      "scopes": [
+        "read:inbound_email",
+        "read:customers",
+        "send:email_external",
+        "manage:tickets"
+      ],
+      "delegates_to": [
+        "billing-04"
+      ]
+    },
+    {
+      "id": "support-03",
+      "name": "Helpy",
+      "role": "customer support",
+      "status": "active",
+      "scopes": [
+        "read:inbound_email",
+        "read:customers",
+        "send:email_external",
+        "manage:tickets"
+      ],
+      "delegates_to": [
+        "billing-04"
+      ]
+    },
+    {
+      "id": "devops-07",
+      "name": "Dev-Oops-7",
+      "role": "infrastructure operations",
+      "status": "active",
+      "scopes": [
+        "admin:cluster",
+        "read:secrets",
+        "http:outbound",
+        "read:metrics"
+      ],
+      "delegates_to": [
+        "vault-14"
+      ]
+    },
+    {
+      "id": "devops-10",
+      "name": "Kuby",
+      "role": "infrastructure operations",
+      "status": "active",
+      "scopes": [
+        "admin:cluster",
+        "read:secrets",
+        "http:outbound",
+        "read:metrics"
+      ],
+      "delegates_to": [
+        "vault-14"
+      ]
+    },
+    {
+      "id": "moderation-08",
+      "name": "Moderatus",
+      "role": "content moderation",
+      "status": "active",
+      "scopes": [
+        "read:issues",
+        "read:model_cards",
+        "post:public_comments"
+      ],
+      "delegates_to": [
+        "support-02"
+      ]
+    },
+    {
+      "id": "moderation-27",
+      "name": "Flagella",
+      "role": "content moderation",
+      "status": "active",
+      "scopes": [
+        "read:issues",
+        "read:model_cards",
+        "post:public_comments"
+      ],
+      "delegates_to": [
+        "support-03"
+      ]
+    },
+    {
+      "id": "billing-04",
+      "name": "Billy",
+      "role": "billing",
+      "status": "active",
+      "scopes": [
+        "read:billing",
+        "read:customers",
+        "send:email_external"
+      ],
+      "delegates_to": []
+    },
+    {
+      "id": "docs-09",
+      "name": "Docster",
+      "role": "documentation",
+      "status": "active",
+      "scopes": [
+        "read:model_cards",
+        "write:model_cards",
+        "read:issues"
+      ],
+      "delegates_to": [
+        "moderation-08"
+      ]
+    },
+    {
+      "id": "tooling-17",
+      "name": "Toolie",
+      "role": "MCP tool runner",
+      "status": "active",
+      "scopes": [
+        "use:mcp_tools",
+        "http:outbound",
+        "write:repos"
+      ],
+      "delegates_to": [
+        "devops-07"
+      ]
+    },
+    {
+      "id": "tooling-16",
+      "name": "Wrenchy",
+      "role": "MCP tool runner",
+      "status": "active",
+      "scopes": [
+        "use:mcp_tools",
+        "http:outbound",
+        "write:repos"
+      ],
+      "delegates_to": [
+        "devops-07"
+      ]
+    },
+    {
+      "id": "liaison-19",
+      "name": "Lia",
+      "role": "research liaison",
+      "status": "active",
+      "scopes": [
+        "read:inbound_email",
+        "post:board",
+        "send:email_external"
+      ],
+      "delegates_to": [
+        "support-03"
+      ]
+    },
+    {
+      "id": "vault-14",
+      "name": "Vaulty",
+      "role": "secrets broker",
+      "status": "active",
+      "scopes": [
+        "read:secrets"
+      ],
+      "delegates_to": []
+    },
+    {
+      "id": "analytics-19",
+      "name": "Metrix",
+      "role": "usage analytics",
+      "status": "active",
+      "scopes": [
+        "read:customers",
+        "read:billing",
+        "read:metrics"
+      ],
+      "delegates_to": []
+    },
+    {
+      "id": "indexer-17",
+      "name": "Indy",
+      "role": "search indexer",
+      "status": "active",
+      "scopes": [
+        "read:model_cards",
+        "read:metrics",
+        "ingest:datasets",
+        "post:board"
+      ],
+      "delegates_to": [
+        "devops-07",
+        "liaison-19",
+        "support-09"
+      ]
+    },
+    {
+      "id": "scheduler-15",
+      "name": "Cronos",
+      "role": "job scheduler",
+      "status": "active",
+      "scopes": [
+        "manage:tickets",
+        "post:board"
+      ],
+      "delegates_to": [
+        "analytics-19",
+        "indexer-17"
+      ]
+    },
+    {
+      "id": "redteam-01",
+      "name": "RedTeam-01",
+      "role": "authorised red-team agent",
+      "status": "active",
+      "scopes": [
+        "post:board",
+        "read:issues"
+      ],
+      "delegates_to": []
+    },
+    {
+      "id": "standby-01",
+      "name": "Understudy",
+      "role": "stand-in agent",
+      "status": "active",
+      "scopes": [
+        "read:metrics"
+      ],
+      "delegates_to": []
+    },
+    {
+      "id": "standby-02",
+      "name": "Benchwarmer",
+      "role": "stand-in agent",
+      "status": "active",
+      "scopes": [
+        "read:metrics"
+      ],
+      "delegates_to": []
+    }
+  ]
+}

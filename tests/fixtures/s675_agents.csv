@@ -1,0 +1,22 @@
+id,label,role,group,owner,critical,stand_in
+ingest-12,Ingrid,dataset-processing pipeline,Data Platform,Elif Şahin,,
+ingest-05,Slurpy,dataset-processing pipeline,Data Platform,Amara Okafor,,
+support-09,Hugo,customer support,Support,Priya Raman,,
+support-02,Hugo,customer support,Support,Mateo Álvarez,,
+support-03,Helpy,customer support,Support,Priya Raman,,
+devops-07,Dev-Oops-7,infrastructure operations,Infrastructure,Mateo Álvarez,,
+devops-10,Kuby,infrastructure operations,Infrastructure,Elif Şahin,,
+moderation-08,Moderatus,content moderation,Trust & Safety,Mira Petrović,,
+moderation-27,Flagella,content moderation,Trust & Safety,Yusuf Demir,,
+billing-04,Billy,billing,Finance,Noah Fischer,invoice run 22:00–23:00 UTC,standby-01;standby-02
+docs-09,Docster,documentation,Developer Experience,Yusuf Demir,,
+tooling-17,Toolie,MCP tool runner,Developer Experience,Mira Petrović,,
+tooling-16,Wrenchy,MCP tool runner,Developer Experience,Elif Şahin,,
+liaison-19,Lia,research liaison,Partnerships,Lena Gruber,,
+vault-14,Vaulty,secrets broker,Security,Amara Okafor,issues short-lived CI tokens,standby-01;standby-02
+analytics-19,Metrix,usage analytics,Data Platform,Amara Okafor,,
+indexer-17,Indy,search indexer,Data Platform,Mira Petrović,,
+scheduler-15,Cronos,job scheduler,Infrastructure,Priya Raman,nightly jobs,standby-01;standby-02
+redteam-01,RedTeam-01,authorised red-team agent,Security,Elif Şahin,,
+standby-01,Understudy,stand-in agent,Platform,Elif Şahin,,
+standby-02,Benchwarmer,stand-in agent,Platform,Elif Şahin,,
