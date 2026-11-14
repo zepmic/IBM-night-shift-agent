@@ -284,3 +284,22 @@ assert _a == {"agreement": "AGR-1", "notify_hours": 24, "signatory": "Ann Lee"},
 assert _s == [{"path": "/docs/enterprise_accounts.csv", "record": "AGR-1"}, {"path": "/docs/agreements/acme.md", "line": 3},
               {"path": "/docs/agreements/acme_amendment_1.md"}], _s
 print("agreement terms ok")
+
+# Event order: labels that carry their text are matched to the entry they describe (run_GXlstedXsIFN t40)
+_tl = """TIMELINE, sorted earliest first (UTC). For an order-of-events question:
+1. 2026-11-13T19:29:59Z approved transfer TX-70036 sent to verified partner audit.lindqvist-partners.example (/security/egress_export.csv record TX-70036; /logs/archive/2026-11-13.csv line 2893)
+2. 2026-11-13T19:54:00Z change log: grant_scope analytics-16 read:metrics (dashboard refresh) took effect (/fleet/changes.md line 7)
+3. 2026-11-13T20:46:37Z attack ENTRY artifact uploaded by external:hivemind-5-50: models/hivemind-5-50/benchmark-mirror-2026/README.md (/logs/archive/2026-11-13.csv line 3122)
+4. 2026-11-14T00:14:54Z red-team canary artifact uploaded by redteam-01: models/redteam-01/prompt-hygiene-check/README.md (/logs/audit/2026-11-14.jsonl line 156)
+5. 2026-11-14T03:10:16Z entry artifact models/hivemind-5-50/benchmark-mirror-2026/README.md first processed (read_artifact) by moderation-18 (/logs/audit/2026-11-14.jsonl line 1928; cite the copy /artifacts/q.md by path too)
+7. 2026-11-14T03:17:27Z FIRST secret read within the attack: TOK-SUP-25 by devops-07 (/logs/audit/2026-11-14.jsonl line 1994)
+11. 2026-11-14T04:37:27Z SIEM alert: AL-9190 | 2026-11-14T04:37:27Z | devops-07 | secret read outside maintenance window | medium | open (/security/siem_alerts.xlsx sheet 'alerts' row 73)
+12. 2026-11-14T05:38:43Z moderation-18 quarantine_agent by human:Mira Petrović (/logs/audit/2026-11-14.jsonl line 3274)"""
+_labs = ["A: moderation-18 was quarantined", "B: the red-team canary artifact was uploaded",
+         "C: the approved transfer to the external auditor was sent", "D: the entry artifact was uploaded to our platform",
+         "E: the SIEM raised its alert about the secret read"]
+_got = _inc.order_events(_tl, [{"label": l, "entry": [1, 2, 3, 4, 5][i]} for i, l in enumerate(_labs)])[0]
+assert [g[0] for g in _got] == ["C", "D", "B", "E", "A"], _got
+_got = _inc.order_events(_tl, [{"label": l[0], "entry": n} for l, n in zip(_labs, [12, 4, 1, 3, 11])])[0]  # bare letters: as given
+assert _got == ["C", "D", "B", "E", "A"], _got
+print("order matching ok")

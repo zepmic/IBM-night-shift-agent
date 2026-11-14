@@ -806,7 +806,7 @@ def timeline(read: Callable[[str], bytes], paths: set[str], r: dict, t: dict) ->
                     items.append((ts, f"SIEM alert: {line[:100]} ({p} {'sheet ' + repr(sheet) + ' row ' + str(n) if sheet else 'line ' + str(n)})"))
     items.sort(key=lambda i: i[0])
     return ["TIMELINE, sorted earliest first (UTC). For an order-of-events question do not sort yourself: call incident_facts "
-            "again with order=[{\"label\": \"A\", \"entry\": <number below>}, ...] and submit the order it returns:"] + [f"{k}. {iso(ts)} {txt}" for k, (ts, txt) in enumerate(items[:40], 1)]
+            "again with order=[{\"label\": \"A: <the event text of the question>\", \"entry\": <number below>}, ...] and submit the order it returns:"] + [f"{k}. {iso(ts)} {txt}" for k, (ts, txt) in enumerate(items[:40], 1)]
 
 
 # --- board triage ---------------------------------------------------------------------------------------------
@@ -982,8 +982,45 @@ def order_events(sheet: str, order: list) -> tuple[list[str], list[str], list[st
             bad.append(f"{label}: no timeline entry {n}")
             continue
         picked.append((entries[n].split(" ", 2)[1], n, label))
+    picked = _fix_matches(picked, entries)
     picked.sort()
     return [p[2] for p in picked], [entries[p[1]] for p in picked], bad
+
+
+_STOP = {"the", "was", "its", "our", "about", "with", "within", "from", "that", "this", "and", "for", "were", "has", "been",
+         "took", "effect", "cite", "copy", "path", "too", "line", "record", "sheet", "row", "logs", "audit", "archive", "jsonl", "csv"}
+
+
+def _stems(t: str) -> set[str]:
+    t = re.sub(r"\((?:/|\w+ \w+ /)[^)]*\)", " ", t)  # citations do not describe the event
+    return {w[:6] for w in re.findall(r"[a-z0-9]+(?:-[a-z0-9]+)*", t.lower()) if len(w) >= 3 and w not in _STOP}
+
+
+def _fix_matches(picked: list[tuple[str, int, str]], entries: dict[int, str]) -> list[tuple[str, int, str]]:
+    """When a label carries its event text ("D: the entry artifact was uploaded"), the entry it describes best wins
+    over the number the model chose (run_GXlstedXsIFN t40: labels mapped to entries 1..5 in turn, 0.4). Greedy,
+    each entry once; the model's choice stands when the text gives no better match."""
+    texts = {i: (lab.split(":", 1)[1] if ":" in lab else "") for i, (_, _, lab) in enumerate(picked)}
+    if sum(1 for t in texts.values() if t.strip()) < 2:
+        return picked
+    est = {n: _stems(e.split(" ", 2)[2] if e.count(" ") >= 2 else e) for n, e in entries.items()}
+    score = {(i, n): len(_stems(texts[i]) & est[n]) for i in texts for n in entries if texts[i].strip()}
+    cands = sorted(((sc, i, n) for (i, n), sc in score.items() if sc > 0), reverse=True)
+    taken_i, taken_n, assign = set(), set(), {}
+    for sc, i, n in cands:
+        if i in taken_i or n in taken_n:
+            continue
+        assign[i] = n
+        taken_i.add(i)
+        taken_n.add(n)
+    out = []
+    for i, (ts, n, lab) in enumerate(picked):
+        m = assign.get(i)
+        if m is not None and score.get((i, m), 0) > score.get((i, n), 0):
+            out.append((entries[m].split(" ", 2)[1], m, lab))
+        else:
+            out.append((ts, n, lab))
+    return out
 
 
 def _rule_flags(text: str) -> tuple[bool | None, bool | None]:
