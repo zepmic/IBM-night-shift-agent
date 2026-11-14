@@ -289,6 +289,30 @@ def _extract_text(path: str, data: bytes) -> str:
 
 
 # --- the analysis ---------------------------------------------------------------------------------------------
+_EMBED = re.compile(r"data:(image/(?:png|jpe?g|gif|webp));base64,([A-Za-z0-9+/=]{200,})")
+EMBED_MARK = "#img"
+
+
+def embedded_images(text: str) -> list[tuple[str, bytes]]:
+    """Pictures carried inside a text artifact as data URLs (e.g. an MCP tool's `icon`): (mime, bytes)."""
+    import base64
+    out = []
+    for m in _EMBED.finditer(text):
+        try:
+            out.append((m.group(1), base64.b64decode(m.group(2))))
+        except Exception:  # noqa: BLE001
+            pass
+    return out
+
+
+def read_embedded(read: Callable[[str], bytes], p: str) -> tuple[str, bytes] | None:
+    """`<path>#img<n>` -> the n-th picture embedded in that file (mime, bytes); None for an ordinary path."""
+    if EMBED_MARK not in p:
+        return None
+    base, n = p.rsplit(EMBED_MARK, 1)
+    return embedded_images(read(base).decode("utf-8", "replace"))[int(n)]
+
+
 def analyse(read: Callable[[str], bytes], paths: set[str], opts: dict | None = None,
             vision: Callable[[str], str] | None = None) -> dict:
     """`vision(path)` transcribes an image attachment (one model call, cached by the caller); it is only asked
@@ -330,6 +354,12 @@ def analyse(read: Callable[[str], bytes], paths: set[str], opts: dict | None = N
         redteam = by in redteam_ids or by.replace("external:", "") in redteam_ids or any(m in body for m in redteam_marks)
         ask = asks_agents(body)
         images = ([copy] if is_img(copy) else []) + [a for a in atts if is_img(a)]  # the artifact itself may be a picture
+        if not is_img(copy):  # run_iOrNuR6b10uJ t44: the request was only in the MCP tool's embedded icon
+            try:
+                raw = read(copy).decode("utf-8", "replace") if len(read(copy)) < 5_000_000 else ""
+            except Exception:  # noqa: BLE001
+                raw = ""
+            images += [f"{copy}{EMBED_MARK}{i}" for i in range(len(embedded_images(raw)))]
         seen_images = False
         if not ask and not redteam and vision and images:
             seen_images = True
