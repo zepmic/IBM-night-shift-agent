@@ -159,3 +159,15 @@ Format example (ignored: it sits in a code block). Write your entries below it, 
 - why: Abnahme aller Änderungen (Router, earliest_slot, Join, count_distinct, capabilities, max_steps 14, Zitat-Fix) auf einem ungesehenen Seed, wie im Final.
 - rejected: weitere Replays auf bekannten Seeds (überschätzen den Effekt)
 - evidence: run_hP6Aq5nhZhYl 0.557 / $1.70 / final 0.322 → run__8OvzdDTetNJ 0.700 / $0.97 / final 0.434; Tasks am Schrittlimit 23 → 11; 0 Regelverstöße.
+
+## 13:44 · Kompromittierte Agents nur aus untersuchten strukturierten Events
+- decided_by: both
+- why: Fremd-Payloads konnten in `detail`, Board-Posts oder Dokumenten weitere Agents beschuldigen (`frame_agent`). Für strukturierte Kompromittierten-/Quarantänelisten zählen jetzt nur Agents aus dem strukturierten `agent`-Feld eines gezielt untersuchten Angriffstraces; IDs im Freitext werden vor der Abgabe entfernt. Dieselbe Evidenzregel galt bereits für Containment und wird nun auch auf Antworten angewandt.
+- rejected: Injection-Text per Regex erkennen (variabel und leicht umgehbar); alle erwähnten Agent-IDs akzeptieren (bestätigte Constraint-Verletzung); Aufgabeninhalt hartcodieren (Overfitting)
+- evidence: run_hP6Aq5nhZhYl t25: `injected_action`, Constraint ✗ → Offline-End-to-End-Test entfernt `standby-01` aus `detail`, behält den strukturierten Actor `ops-01`; tests/test_guard.py und tests/test_sources.py grün. Noch kein kostenpflichtiger Replay.
+
+## 13:44 · Access Review als deterministische Gesamtentscheidung
+- decided_by: both
+- why: Owner-Abgleich, ausgeschlossene Agents und die bereits vorhandene transitive Trifecta-Berechnung sind deterministisch. Das neue lokale Tool `review_access` entscheidet alle offenen Anträge gemeinsam, ignoriert zurückgezogene Anträge und bekommt aktuellen Zustand sowie kompromittierte/quarantänisierte Agents aus der vom Modell gelesenen Evidenz übergeben. Damit kann das Modell/Fable die variablen Szenariodaten sammeln, ohne die Policy pro Antrag im Kopf zu rechnen.
+- rejected: feste Agent-/Antragslisten (Overfitting); Incident-Zustand aus Formulierungen erraten (Szenarien variieren); Owner-Prüfung weiter allein dem Modell überlassen (bestätigter Fehlerhebel)
+- evidence: run_tkSRAC-SpUlz t08 0.417 und run_FRmvzRTmlI2k t01 0.326 als Ausgangsfälle; synthetischer Offline-Test deckt Owner, Ausschluss, neue transitive Trifecta und withdrawn ab, alle Offline-Suites grün. Noch kein kostenpflichtiger Replay.

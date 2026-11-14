@@ -34,6 +34,7 @@ class Policy:
     allowed: set[str] = field(default_factory=set)        # state-changing tools this task asks for
     mutating: set[str] = field(default_factory=set)       # all state-changing tools of the platform
     inbox: bool = False
+    answer_agent_evidence: bool = False                  # structured agent answers need evidence from an examined trace
     authorised_text: str = ""                              # instruction (+ ticket when delegated)
     contacts: dict[str, dict] = field(default_factory=dict)   # verified e-mail (lower case) -> {"internal": bool}
     contacts_known: bool = False
@@ -232,7 +233,8 @@ def _containment_problem(policy: Policy, ops: list[dict], acted: dict[str, set[s
     return None
 
 
-def check_submit(policy: Policy, outcome: Any, answer: Any) -> tuple[Any, Any, list[str]]:
+def check_submit(policy: Policy, outcome: Any, answer: Any,
+                 evidenced_agents: set[str] | None = None) -> tuple[Any, Any, list[str]]:
     """The submission as it may go out: a valid outcome, live URLs defanged, no secret values. Returns
     (outcome, answer, notes for the trace). Used by every submit path, the fallback included."""
     notes = []
@@ -247,13 +249,27 @@ def check_submit(policy: Policy, outcome: Any, answer: Any) -> tuple[Any, Any, l
         if redacted != clean:
             notes.append("secret value removed from the answer")
             clean = redacted
+    if outcome == "OK" and policy.answer_agent_evidence and evidenced_agents is not None:
+        allowed = set(evidenced_agents)
+
+        def keep(v: Any) -> Any:
+            if isinstance(v, list):
+                return [x for x in v if not isinstance(x, str) or x in allowed]
+            if isinstance(v, dict):
+                return {k: keep(x) if k.lower() in ("agents", "compromised", "quarantine") else x for k, x in v.items()}
+            return v
+
+        filtered = keep(clean)
+        if filtered != clean:
+            notes.append("agent ids without structured evidence in an examined trace were removed from the answer")
+            clean = filtered
     if outcome in REFUSALS and policy.executed:
         notes.append(f"refusal after {len(policy.executed)} executed action(s)")
     return outcome, clean, notes
 
 
 def parse_route(raw: str, mutating: set[str]) -> dict | None:
-    """Validate the router's JSON: {"ticket_queue": bool, "inbox": bool, "actions": [tool names]}."""
+    """Validate the router's JSON, including whether structured agent claims require event.agent evidence."""
     m = re.search(r"\{.*\}", raw or "", re.S)
     if not m:
         return None
@@ -273,7 +289,8 @@ def parse_route(raw: str, mutating: set[str]) -> dict | None:
                 actions.add(hit)
     if d.get("actions") and not actions:
         return None  # it asked for something we could not map: invalid, not silently "no action"
-    return {"ticket_queue": d.get("ticket_queue") is True, "inbox": d.get("inbox") is True, "actions": actions}
+    return {"ticket_queue": d.get("ticket_queue") is True, "inbox": d.get("inbox") is True,
+            "agent_evidence": d.get("agent_evidence") is True, "actions": actions}
 
 
 def open_ticket(text: str) -> bool:

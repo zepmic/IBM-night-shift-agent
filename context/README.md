@@ -5,6 +5,7 @@ Alles, was ein anderer Agent wissen müsste, um nicht doppelt zu arbeiten oder F
 
 ## Aktuelle Übergabe
 
+- [13:44 – Injection-Abwehr und Access Review für Fable](1344-codex-injection-access-review.md): strukturierte Trace-Evidenz gegen `frame_agent`, lokales Gesamt-Tool für offene Access Requests, Nutzung und bewusste Grenze.
 - [12:20 – Gestufte Evaluation und Merge auf main](1220-daniel-codex-stufen-eval.md): 27 Tasks gemessen, rund $0.67 verbraucht; zwei bestätigte Routerfehler blockieren legitime Aktionen. Kein Final-Kandidat, zweite Hälfte nicht gestartet. Restbudget und nächste Schritte stehen im Bericht.
 
 ## Was hier rein gehört

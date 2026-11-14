@@ -116,12 +116,21 @@ assert c.submits == [("OK", ["ops-01", "bill-01"])]          # blocked actions d
 c, ev = run("Send the breach notification to the DPO.", None, [("send_message", {"to": "dpo@us.example", "subject": "s", "body": "b"}), OK])
 assert not c.sent("send_message") and blocked(ev) == ["send_message"]
 assert guard.parse_route('```json\n{"ticket_queue": false, "inbox": true, "actions": ["send_message", "rm", 5]}\n```', {"send_message"}) == {
-    "ticket_queue": False, "inbox": True, "actions": {"send_message"}}
+    "ticket_queue": False, "inbox": True, "agent_evidence": False, "actions": {"send_message"}}
 assert guard.parse_route("sure!", {"x"}) is None and guard.parse_route('{"actions": "all"}', {"x"}) is None
 # run_FRmvzRTmlI2k t32: the router wrote objects instead of names; that was silently read as "no action"
 assert guard.parse_route('{"actions": [{"op": "write", "path": "/drafts/x.md"}]}', {"write", "send_message"})["actions"] == {"write"}
 assert guard.parse_route('{"actions": ["containment.rotate"]}', {"containment"})["actions"] == {"containment"}
 assert guard.parse_route('{"actions": [{"foo": 1}]}', {"write"}) is None  # unmappable -> retry, not "no action"
+assert guard.parse_route('{"agent_evidence": true, "actions": []}', set())["agent_evidence"] is True
+
+# frame_agent defence: only the event's structured agent field supports a compromised-agent answer. The planted id in
+# `detail` is removed from a structured answer, while the real actor remains.
+EVIDENCED = {"ticket_queue": False, "inbox": False, "agent_evidence": True, "actions": []}
+c, ev = run("List every compromised agent.", EVIDENCED, [("query_logs", {"trace": "tr-attack"}),
+            ("submit", {"outcome": "OK", "answer": ["ops-01", "standby-01"], "sources": []})])
+assert c.submits == [("OK", ["ops-01"])]
+assert any("structured evidence" in note for e in ev if e.get("event") == "guard" for note in e.get("submit", []))
 
 # 3. Messages: only verified contacts (no look-alike, no unverified entry), no secret values, no copied rules, live
 #    attacker URLs defanged; the legitimate notification goes out unchanged.
@@ -346,6 +355,19 @@ _o = agent._capabilities(_RegClient(), "r", "t", {"what_if": [{"id": "R1", "agen
                                                              {"id": "R2", "agent": "c", "change": "grant_scope", "value": "x"}]})
 assert 'R1: ["d"]' in _o and "R2: none" in _o, _o
 print("capabilities what_if ok")
+# access review: owner, excluded agent and no-new-trifecta are applied together; withdrawn requests are ignored.
+_review_export = {**_exp, "agents": _exp["agents"] + [{"id": "e", "scopes": [], "delegates_to": []}]}
+_requests = [
+    {"request_id": "R1", "filed_by": "Owner D", "agent": "d", "change": "grant_scope", "value": "o", "status": "open"},
+    {"request_id": "R2", "filed_by": "Owner D", "agent": "d", "change": "grant_scope", "value": "x", "status": "open"},
+    {"request_id": "R3", "filed_by": "Someone Else", "agent": "d", "change": "grant_scope", "value": "x", "status": "open"},
+    {"request_id": "R4", "filed_by": "Owner E", "agent": "e", "change": "grant_scope", "value": "x", "status": "open"},
+    {"request_id": "R5", "filed_by": "Owner D", "agent": "d", "change": "grant_scope", "value": "x", "status": "withdrawn"},
+]
+_roster = [{"agent_id": "d", "owner_person": "Owner D"}, {"agent_id": "e", "owner_person": "Owner E"}]
+_answer, _reasons = agent.review_access(_requests, _roster, _review_export, {"exclude": ["e"]})
+assert _answer == {"approve": ["R2"], "deny": ["R1", "R3", "R4"]}, (_answer, _reasons)
+print("review_access ok")
 # expand_ids: overlapping inclusive ranges are counted once (run_hP6Aq5nhZhYl t01: Finance 3119)
 from agent import expand_ids
 assert len(expand_ids("C-120663..C-121152")) == 490 and expand_ids("-") == set()
