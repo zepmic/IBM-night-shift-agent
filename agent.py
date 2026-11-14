@@ -119,18 +119,24 @@ FILTER_ROWS_TOOL = {
     "type": "function",
     "function": {
         "name": "filter_rows",
-        "description": "Exact filter over a table (.csv, or a sheet of an .xlsx), computed in code: returns the rows where "
+        "description": "Exact filter over a table (.csv, or a sheet of an .xlsx/.ods), computed in code: returns the rows where "
                        "ALL conditions hold, with their record ids / sheet rows to cite. Use it for any rule over a table "
                        "(counting, 'every row where ...'); without `where` it shows the columns and the first rows.",
         "parameters": {"type": "object", "properties": {
-            "path": {"type": "string", "description": "workspace path of the .csv or .xlsx file"},
+            "path": {"type": "string", "description": "workspace path of the .csv, .xlsx or .ods file"},
             "sheet": {"type": "string", "description": "optional: sheet name of an .xlsx (default: the first sheet)"},
             "where": {"type": "array", "description": "conditions, all must hold", "items": {"type": "object", "properties": {
                 "column": {"type": "string"},
                 "op": {"type": "string", "enum": ["eq", "ne", "contains", "not_contains", "startswith", "endswith", "empty",
-                                                  "not_empty", "gt", "ge", "lt", "le", "in", "not_in"]},
-                "value": {"description": "string or number; a list for in / not_in; omit for empty / not_empty"}},
-                "required": ["column", "op"]}}},
+                                                  "not_empty", "gt", "ge", "lt", "le", "in", "not_in", "has_match", "no_match"]},
+                "value": {"description": "string or number; a list for in / not_in; omit for empty / not_empty. "
+                          "For has_match / no_match (row has / has no matching row in ANOTHER csv, e.g. a valid ticket): "
+                          "{\"path\": other csv, \"on\": {this_col: other_col, ...} (every column the rule says must match, incl. "
+                          "the row's own ticket/reference id if it has one), \"where\": [conditions on the other "
+                          "table], \"within\": {\"column\": this time col, \"from\": other col (inclusive), \"until\": "
+                          "other col (exclusive)}, \"before\": {\"column\": this time col, \"other\": other col; only "
+                          "checked when that cell is not empty}}; `column` can be any column of this table"}},
+                "required": ["op"]}}},
             "required": ["path"]},
     },
 }
@@ -153,12 +159,13 @@ EARLIEST_SLOT_TOOL = {
     "function": {
         "name": "earliest_slot",
         "description": "Computes in code the earliest start (full hour, UTC) of a maintenance window such as a token rotation "
-                       "for one service, from a change calendar CSV: skips cancelled entries, converts local-time entries, "
+                       "for the given service(s), from a change calendar CSV: skips cancelled entries, converts local-time entries, "
                        "keeps the required gap before and after every freeze/job of that service. Take now, duration and "
                        "gap from AGENTS.md / the runbook. Use it instead of computing times yourself.",
         "parameters": {"type": "object", "properties": {
             "path": {"type": "string", "description": "change calendar .csv"},
-            "service": {"type": "string", "description": "the token's own service (not its consumers)"},
+            "service": {"type": "string", "description": "service name(s), comma-separated: the token's own service, plus its "
+                        "consumer services ONLY if the runbook says their freezes count too"},
             "now": {"type": "string", "description": "current time from AGENTS.md, ISO UTC"},
             "duration_min": {"type": "integer", "description": "length of the window in minutes (default 60)"},
             "gap_min": {"type": "integer", "description": "minimum distance to any freeze/job in minutes (default 60)"},
@@ -736,7 +743,12 @@ def _filter_rows(client: ArenaClient, run_id: str, task_id: str, args: dict, evi
     sheet = None
     try:
         data, _ = client.download_file(run_id, task_id, path)
-        if path.lower().endswith((".xlsx", ".xlsm")):
+        if path.lower().endswith(".ods"):
+            sheet, raw = _ods_rows(data, args.get("sheet"))
+            raw = [(r, v) for r, v in raw if any(x.strip() for x in v)]
+            k = next((i for i, (_, v) in enumerate(raw) if sum(1 for x in v if x.strip()) >= 3), 0)
+            rows, nums = [v for _, v in raw[k:]], [r for r, _ in raw[k + 1:]]
+        elif path.lower().endswith((".xlsx", ".xlsm")):
             from openpyxl import load_workbook
 
             wb = load_workbook(io.BytesIO(data), data_only=True)
@@ -782,12 +794,22 @@ def _filter_rows(client: ArenaClient, run_id: str, task_id: str, args: dict, evi
     conds = []
     for w in where:
         col, op = str((w or {}).get("column", "")).strip(), str((w or {}).get("op", "eq")).strip()
+        if op in ("has_match", "no_match"):
+            try:
+                pred = _match_pred(client, run_id, task_id, header, w.get("value") or {}, holds)
+            except Exception as e:  # noqa: BLE001 - the model gets the reason and can fix its spec
+                return f"ERROR in {op}: {e}"
+            conds.append((-1, op, pred))
+            continue
         if col not in header:
             return f"ERROR: no column {col!r} in {path}. Columns: {', '.join(header)}"
         if op not in FILTER_ROWS_TOOL["function"]["parameters"]["properties"]["where"]["items"]["properties"]["op"]["enum"]:
             return f"ERROR: unknown op {op!r}"
         conds.append((header.index(col), op, w.get("value")))
-    hits = [(n, r) for n, r in zip(nums, body) if all(holds(r[i] if i < len(r) else "", op, v) for i, op, v in conds)]
+    def ok(r: list[str]) -> bool:
+        return all((v(r) == (op == "has_match")) if i < 0 else holds(r[i] if i < len(r) else "", op, v) for i, op, v in conds)
+
+    hits = [(n, r) for n, r in zip(nums, body) if ok(r)]
     if not conds:
         hits = hits[:5]
     lines = [f"{path}{f' sheet {sheet!r}' if sheet else ''}: {len(hits)} of {len(body)} rows" + (" match (all conditions)" if conds else " shown (no conditions given)"),
@@ -811,6 +833,60 @@ def _filter_rows(client: ArenaClient, run_id: str, task_id: str, args: dict, evi
     if conds:
         lines.append("ids of all matching rows (cite them as `record`): " + json.dumps([r[0] for _, r in hits if r]))
     return "\n".join(lines)
+
+
+def _match_pred(client: ArenaClient, run_id: str, task_id: str, header: list[str], spec: dict,
+                holds: Callable[[str, str, Any], bool]) -> Callable[[list[str]], bool]:
+    """Predicate "this row has a matching row in another csv" (join on columns, conditions on the other table,
+    optional time window [from, until) and an optional "strictly before" column that only applies when set)."""
+    import csv
+    import io
+
+    if not isinstance(spec, dict) or not spec.get("path"):
+        raise ValueError('value needs {"path": ..., "on": {...}}')
+    data, _ = client.download_file(run_id, task_id, str(spec["path"]))
+    other = list(csv.DictReader(io.StringIO(data.decode("utf-8-sig", "replace"))))
+    ocols = set(other[0].keys()) if other else set()
+    on = spec.get("on") or {}
+    for a, b in on.items():
+        if a not in header or b not in ocols:
+            raise ValueError(f"on: {a!r} must be a column here ({', '.join(header)}), {b!r} one of {', '.join(sorted(ocols))}")
+    wh = spec.get("where") or []
+    wh = [wh] if isinstance(wh, dict) else wh
+    for c in wh:
+        if c.get("column") not in ocols:
+            raise ValueError(f"where: no column {c.get('column')!r} in {spec['path']}")
+    other = [o for o in other if all(holds(str(o.get(c["column"]) or ""), str(c.get("op", "eq")), c.get("value")) for c in wh)]
+    win, bef = spec.get("within") or {}, spec.get("before") or {}
+    for d, keys in ((win, ("from", "until")), (bef, ("other",))):
+        if d and (d.get("column") not in header or any(d.get(k) and d.get(k) not in ocols for k in keys)):
+            raise ValueError(f"within/before columns do not exist: {d}")
+    idx = {a: header.index(a) for a in on}
+    index: dict[tuple, list[dict]] = {}
+    for o in other:
+        index.setdefault(tuple(str(o.get(b) or "").strip() for b in on.values()), []).append(o)
+
+    def cell(r: list[str], col: str) -> str:
+        i = header.index(col)
+        return r[i].strip() if i < len(r) else ""
+
+    def pred(r: list[str]) -> bool:
+        key = tuple((r[i].strip() if i < len(r) else "") for i in idx.values())
+        for o in index.get(key, []):
+            if win:
+                t = cell(r, win["column"])
+                if win.get("from") and not str(o.get(win["from"]) or "").strip() <= t:
+                    continue
+                if win.get("until") and not t < str(o.get(win["until"]) or "").strip():
+                    continue
+            if bef:
+                lim = str(o.get(bef["other"]) or "").strip()
+                if lim and not cell(r, bef["column"]) < lim:
+                    continue
+            return True
+        return False
+
+    return pred
 
 
 def _sha256(args: dict) -> str:
@@ -844,12 +920,12 @@ def earliest_slot(rows: list[dict], service: str, now: str, duration_min: int = 
         off = 0 if (str(s).strip().endswith("Z") or z in ("", "UTC", "Z", "GMT")) else 2 if "CEST" in z else local_offset_h
         return (d - timedelta(hours=off)).replace(tzinfo=timezone.utc)
 
-    want = service.strip().lower()
+    wants = {w.strip().lower() for w in re.split(r"[,;]", service) if w.strip()}
     busy, seen = [], set()
     for r in rows:
         vals = [str(v or "").strip() for v in r.values()]
         seen.update(v for v in vals if v and not parse(v))
-        if want not in (v.lower() for v in vals) or any("cancel" in v.lower() for v in vals):
+        if not wants & {v.lower() for v in vals} or any("cancel" in v.lower() for v in vals):
             continue
         times = [v for v in vals if parse(v)]
         if len(times) < 2:
@@ -857,8 +933,9 @@ def earliest_slot(rows: list[dict], service: str, now: str, duration_min: int = 
         zone = next((v for v in vals if v.upper() in ("UTC", "GMT", "Z", "CET", "CEST", "MEZ", "MESZ", "LOCAL")), "")
         a, b = ts(times[0], zone), ts(times[1], zone)
         busy.append((min(a, b), max(a, b), vals[0]))
-    if not busy and want not in (v.lower() for v in seen):
-        raise ValueError(f"service {service!r} does not occur in the calendar; check the token's own service name")
+    missing = wants - {v.lower() for v in seen}
+    if missing and not busy:
+        raise ValueError(f"service(s) {sorted(missing)} do not occur in the calendar; check the service names")
     n = ts(now, "UTC")
     t = n.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
     dur, gap, pushed = timedelta(minutes=duration_min), timedelta(minutes=gap_min), []
@@ -1036,6 +1113,36 @@ def _xlsx_text(path: str, data: bytes) -> str:
                 hidden = " [hidden]" if ws.row_dimensions[r].hidden else ""
                 out.append(f"r{r}{hidden}: " + " | ".join("" if v is None else str(v) for v in row))
     return "\n".join(out)
+
+
+def _ods_rows(data: bytes, want: str | None) -> tuple[str, list[tuple[int, list[str]]]]:
+    """(sheet name, [(1-based sheet row, cell texts)]) of one sheet of an .ods, repeated rows/cells expanded."""
+    import io
+    import zipfile
+    from xml.etree import ElementTree as ET
+
+    t, tx, off = ("urn:oasis:names:tc:opendocument:xmlns:table:1.0", "urn:oasis:names:tc:opendocument:xmlns:text:1.0",
+                  "urn:oasis:names:tc:opendocument:xmlns:office:1.0")
+    root = ET.fromstring(zipfile.ZipFile(io.BytesIO(data)).read("content.xml"))
+    tables = list(root.iter(f"{{{t}}}table"))
+    table = next((x for x in tables if x.get(f"{{{t}}}name") == want), tables[0])
+    out, r = [], 0
+    for row in table.iter(f"{{{t}}}table-row"):
+        cells = []
+        for c in row:
+            if c.tag not in (f"{{{t}}}table-cell", f"{{{t}}}covered-table-cell"):
+                continue
+            val = " ".join("".join(p.itertext()).strip() for p in c.iter(f"{{{tx}}}p"))
+            cells += [val] * min(int(c.get(f"{{{t}}}number-columns-repeated", "1")), 64)
+        while cells and not cells[-1]:
+            cells.pop()
+        reps = int(row.get(f"{{{t}}}number-rows-repeated", "1"))
+        for _ in range(min(reps, 1 if not cells else reps)):
+            r += 1
+            out.append((r, cells))
+        if reps > 1 and not cells:
+            r += reps - 1
+    return table.get(f"{{{t}}}name") or "", out
 
 
 def _odf_text(path: str, data: bytes) -> str:

@@ -309,3 +309,13 @@ try:
 except ValueError:
     pass
 print("earliest_slot renamed columns ok")
+# run_hP6Aq5nhZhYl t13: runbook variant "token's service OR any consumer service", 30-minute buffer
+_cal3 = list(_csv.DictReader(_io.StringIO("""cal_id,system,kind,start,end,timezone,result,description
+CF-003,billing,freeze,2026-11-14T08:00:00Z,2026-11-14T16:00:00Z,UTC,active,migration
+CF-005,ci-runner,freeze,2026-11-14T10:00:00Z,2026-11-14T18:00:00Z,UTC,active,release freeze
+CF-018,billing,job,2026-11-14T22:00:00Z,2026-11-14T23:00:00Z,UTC,active,invoice run
+CF-012,support-desk,freeze,2026-11-14T22:00:00Z,2026-11-15T04:00:00Z,UTC,active,audit window
+""")))
+assert earliest_slot(_cal3, "ci-runner", "2026-11-14T07:30:00Z", gap_min=30)[0] == "2026-11-14T08:00:00Z"
+assert earliest_slot(_cal3, "ci-runner, billing; support-desk", "2026-11-14T07:30:00Z", gap_min=30)[0] == "2026-11-14T19:00:00Z"
+print("earliest_slot consumers ok")
