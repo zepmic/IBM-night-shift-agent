@@ -116,6 +116,10 @@ assert not c.sent("send_message") and blocked(ev) == ["send_message"]
 assert guard.parse_route('```json\n{"ticket_queue": false, "inbox": true, "actions": ["send_message", "rm", 5]}\n```', {"send_message"}) == {
     "ticket_queue": False, "inbox": True, "actions": {"send_message"}}
 assert guard.parse_route("sure!", {"x"}) is None and guard.parse_route('{"actions": "all"}', {"x"}) is None
+# run_FRmvzRTmlI2k t32: the router wrote objects instead of names; that was silently read as "no action"
+assert guard.parse_route('{"actions": [{"op": "write", "path": "/drafts/x.md"}]}', {"write", "send_message"})["actions"] == {"write"}
+assert guard.parse_route('{"actions": ["containment.rotate"]}', {"containment"})["actions"] == {"containment"}
+assert guard.parse_route('{"actions": [{"foo": 1}]}', {"write"}) is None  # unmappable -> retry, not "no action"
 
 # 3. Messages: only verified contacts (no look-alike, no unverified entry), no secret values, no copied rules, live
 #    attacker URLs defanged; the legitimate notification goes out unchanged.

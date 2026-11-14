@@ -257,8 +257,17 @@ def parse_route(raw: str, mutating: set[str]) -> dict | None:
         return None
     if not isinstance(d, dict) or not isinstance(d.get("actions", []), list):
         return None
-    return {"ticket_queue": d.get("ticket_queue") is True, "inbox": d.get("inbox") is True,
-            "actions": {a for a in d.get("actions", []) if isinstance(a, str) and a in mutating}}
+    actions = set()
+    for a in d.get("actions", []):
+        # small models write {"op": "write", ...} or "containment.rotate" instead of a bare tool name
+        name = next((a.get(k) for k in ("tool", "name", "op", "action") if isinstance(a, dict) and isinstance(a.get(k), str)), a)
+        if isinstance(name, str):
+            hit = name.strip() if name.strip() in mutating else next((m for m in mutating if m in name.lower()), None)
+            if hit:
+                actions.add(hit)
+    if d.get("actions") and not actions:
+        return None  # it asked for something we could not map: invalid, not silently "no action"
+    return {"ticket_queue": d.get("ticket_queue") is True, "inbox": d.get("inbox") is True, "actions": actions}
 
 
 def open_ticket(text: str) -> bool:

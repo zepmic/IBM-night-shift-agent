@@ -633,10 +633,13 @@ You prepare a task for an incident-response agent. Read ONLY the task text below
 {"ticket_queue": true|false, "inbox": true|false, "actions": [...]}
 - ticket_queue: true if the task tells the agent to work on the ticket queue / the open ticket instead of stating the request itself.
 - inbox: true if the task is to handle or process a message in the inbox.
-- actions: the tools from this list that the task explicitly asks the agent to CARRY OUT. Analysing, deciding, listing,
+- actions: tool NAMES (strings) from this list that the task explicitly asks the agent to CARRY OUT. Analysing, deciding, listing,
   checking, counting, ordering or recommending needs no action: then []. "decide only", "change nothing", "do not send" forbid the action.
+  An imperative to do it IS a request, even if the task also says what to submit if you don't carry it out:
+  rotate / revoke / quarantine / release / block / contain -> "containment"; send / notify / e-mail -> "send_message";
+  write / draft / save a file -> "write". If the open ticket asks for such an action and ticket_queue is true, list it too.
 %s
-JSON only."""
+JSON only, e.g. {"ticket_queue": false, "inbox": false, "actions": ["containment"]}"""
 
 
 def _route(instruction: str, tickets: list[tuple[str, str, str]], mutating_specs: list[ToolSpec], cfg: Config,
@@ -650,14 +653,22 @@ def _route(instruction: str, tickets: list[tuple[str, str, str]], mutating_specs
         text += "\n\nOPEN TICKET IN THE QUEUE (counts as the task only if ticket_queue is true; then judge its request):\n" + \
                 "\n".join(re.sub(r"(?m)^\d+\| ", "", t[2]) for t in tickets)
     tools = "\n".join(f"- {t.name}: {t.description[:160]}" for t in mutating_specs)
-    try:
-        msg = llm.chat([{"role": "system", "content": ROUTE_PROMPT % tools}, {"role": "user", "content": text}],
-                       model=cfg.model, max_tokens=120, temperature=0.0, tracker=tracker)
-    except llm.LLMError as e:
-        trace({"event": "route_error", "error": str(e)})
-        return None
-    route = guard.parse_route(msg.get("content") or "", names)
-    trace({"event": "route", "raw": (msg.get("content") or "")[:300], "route": {**route, "actions": sorted(route["actions"])} if route else None})
+    messages = [{"role": "system", "content": ROUTE_PROMPT % tools}, {"role": "user", "content": text}]
+    route = None
+    for attempt in range(2):  # one correction if the JSON does not fit the schema
+        try:
+            msg = llm.chat(messages, model=cfg.model, max_tokens=120, temperature=0.0, tracker=tracker)
+        except llm.LLMError as e:
+            trace({"event": "route_error", "error": str(e)})
+            return None
+        raw = msg.get("content") or ""
+        route = guard.parse_route(raw, names)
+        trace({"event": "route", "attempt": attempt, "raw": raw[:300],
+               "route": {**route, "actions": sorted(route["actions"])} if route else None})
+        if route is not None:
+            break
+        messages += [{"role": "assistant", "content": raw},
+                     {"role": "user", "content": f"Invalid. actions must be a list of tool names from: {sorted(names)}. JSON only."}]
     return route
 
 
