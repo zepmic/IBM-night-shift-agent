@@ -31,3 +31,9 @@ Format example (ignored: it sits in a code block). Write your entries below it, 
 - why: Mock-Test (context/1100) zeigte: scheitert der LLM-Call, gibt der Agent nichts ab → Task sicher 0. Im Final ($3-Limit → 403, 30 Min) wären das alle Rest-Tasks. Jetzt: letzter vom Modell versuchter Submit (erst mit, dann ohne Quellen), sonst `UNSUPPORTED`/null – laut Task API die einzige Verweigerung, die ohne Antwort punkten kann. Nie ein schreibendes Tool im Fallback.
 - rejected: `OK` mit leerer Antwort (immer 0), `DENIED_SECURITY`/`NEEDS_CLARIFICATION` (brauchen Absender bzw. Agent-IDs, sonst 0), weiterer LLM-Call im Fehlerfall (bei 403 sinnlos, kostet Zeit)
 - evidence: tests/test_fallback.py (Mock, kein Key): 2/2 Mock-Tasks abgegeben, 0 Tool-Calls; noch kein Dev-Run
+
+## 10:51 · Offline-Eval aus Dev-Runs (eval/collect.py, eval/score.py)
+- decided_by: both
+- why: $15 Dev-Budget; jeder beendete Dev-Run verrät expected_answer/expected_sources in finish.json. Daraus ein lokales Fallset bauen und Antworten kostenlos mit der Score-Formel nachrechnen (answer und sources getrennt), statt für jede Quellen-Idee einen neuen Run zu bezahlen. Kosten pro Task stehen jetzt im Trace (`end`-Event).
+- rejected: Fallset ins Repo committen (enthält Dev-Antworten → Overfitting-/Regelrisiko; bleibt in runs/, git-ignored), exakte Nachbildung des Plattform-Graders (unbekannt: Listen-Teilpunkte = F1 angenähert, Action-Tasks und Constraints kommen aus dem Plattform-Grade)
+- evidence: tests/test_eval.py mit Fake-finish.json: Baseline-Fall (Antwort ✓, Quellen 1/4) → lokal 0.775, Plattform 0.77

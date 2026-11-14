@@ -211,14 +211,32 @@ def solve_task(client: ArenaClient, run_id: str, task: Task, tool_specs: list[To
     Whatever goes wrong (model error, exception, step limit), the task is still submitted exactly once: an
     unsubmitted task scores 0 for sure. The fallback is a submit only, never a state-changing tool."""
     state: dict = {"pending": None, "final": False}
+    tracker = _TaskTracker(tracker)  # per-task tally for the trace; the run's tracker still gets every call
     try:
         res = _solve(client, run_id, task, tool_specs, cfg, tracker, trace, state)
     except Exception as e:  # noqa: BLE001 - a bug in one task must not lose its submission
         res = {"error": f"{type(e).__name__}: {e}"}
         trace({"event": "crash", "error": res["error"]})
-    if "error" not in res or state["final"]:
-        return res
-    return _fallback_submit(client, run_id, task, state, res["error"], trace)
+    if "error" in res and not state["final"]:
+        res = _fallback_submit(client, run_id, task, state, res["error"], trace)
+    trace({"event": "end", "cost_usd": tracker.total, "llm_calls": tracker.calls,
+           "prompt_tokens": tracker.prompt_tokens, "completion_tokens": tracker.completion_tokens})
+    return res
+
+
+class _TaskTracker:
+    """Cost of one task (tasks run in parallel on one shared CostTracker)."""
+
+    def __init__(self, parent: llm.CostTracker):
+        self.parent, self.total, self.calls, self.prompt_tokens, self.completion_tokens = parent, 0.0, 0, 0, 0
+
+    def add(self, model: str, usage: dict | None) -> float:
+        cost = self.parent.add(model, usage)
+        self.total += cost
+        self.calls += 1
+        self.prompt_tokens += int((usage or {}).get("prompt_tokens") or 0)
+        self.completion_tokens += int((usage or {}).get("completion_tokens") or 0)
+        return cost
 
 
 def _fallback_submit(client: ArenaClient, run_id: str, task: Task, state: dict, error: str,
