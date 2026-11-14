@@ -105,3 +105,27 @@ Format example (ignored: it sits in a code block). Write your entries below it, 
 - why: t21/t22 gaben die Aktionen richtig aus, antworteten aber mit Prosa statt des verlangten JSON-Objekts. Verlangt der autorisierte Text JSON und kommt ein String, geht die Abgabe einmal zurück ans Modell; die Antwort ist vorher als `pending` gespeichert, damit der Fallback sie nicht verliert.
 - rejected: Prosa automatisch in JSON umbauen (Form ist aufgabenspezifisch)
 - evidence: run_4ccDI7WAFoLa t22 Answer ✓ (vorher partial). Test in tests/test_guard.py angepasst (Fallback-Defang-Test nutzt jetzt eine Prosa-Aufgabe).
+
+## 13:01 · Erster voller Run: Kosten sind der größte Hebel
+- decided_by: both
+- why: run_hP6Aq5nhZhYl (48 Tasks, frischer Seed, main 0af3cc7): Accuracy 0.557, aber $1.70 → cost_score 0.157, final 0.322. Starter-Kit-Finals kosteten laut FINAL_RUN.md $0.66–0.81; im Final wird C über die Spanne der Final-Runs (mind. 10×) gerechnet, $1.70 läge nahe der Obergrenze. 14 Tasks liefen über 20 Schritte: 62 % der Kosten bei Ø 0.36 Score; Ø 12.8k Prompt-Tokens pro Call.
+- rejected: Kontext pro Output weiter kürzen (max_output_chars 5000 → Dokumente brauchen mehr Teil-Reads, test_offline bricht), Accuracy-Arbeit vor Kosten (C wirkt auf alle Tasks)
+- evidence: run_hP6Aq5nhZhYl finish.json; Auswertung der Traces nach llm_calls.
+
+## 13:02 · Schrittlimit 25 → 14, nur 3 volle Outputs im Kontext
+- decided_by: ai
+- why: siehe 13:01. Der erzwungene Submit am letzten Schritt bleibt, kein Task bleibt leer. `main.py --max-steps` nimmt jetzt den Config-Default (vorher fest 25, hätte die Config überschrieben).
+- rejected: Limit 10 (26 Tasks betroffen, 43 % der Punkte), Limit 20 (spart kaum)
+- evidence: Replay desselben Seeds läuft (siehe nächster Eintrag/ context).
+
+## 13:00 · filter_rows: Abgleich mit zweiter Tabelle (has_match/no_match) und .ods
+- decided_by: ai
+- why: Policy-Prüfungen („kein gültiges Ticket: approved, gleicher actor/resource/ticket, Zeitfenster [from, until), vor revoked_at“) waren die teuerste Familie (t03: $0.13, Score 0.075 – Modell las requests.csv seitenweise). Jetzt ein Code-Join. Transfer-Register kam als .ods, filter_rows konnte nur csv/xlsx.
+- rejected: eigenes Policy-Tool pro Familie (Final anders formuliert), Pandas als Dependency (nicht nötig)
+- evidence: Offline gegen run_hP6Aq5nhZhYl t03: mit Ticket-Spalte im Join 39/39 exakt, ohne 22/39 → Tool-Beschreibung nennt die Ticket-Spalte. ODS-Lesung des echten egress_export.ods geprüft.
+
+## 12:58 · earliest_slot: mehrere Services (Consumer-Freezes)
+- decided_by: ai
+- why: Im Szenario von run_hP6Aq5nhZhYl sagt das Runbook „token's service or any of its consumer services“ und 30 statt 60 min Puffer; das Tool nahm nur einen Service → 08:00 und Regelverstoß (t13). `service` nimmt jetzt eine Liste.
+- rejected: Regeltext im Code parsen (Formulierung variiert; das Modell liest die Regel und übergibt Parameter)
+- evidence: tests/test_guard.py mit dem echten Kalender: ci-runner+billing+support-desk, 30 min → 19:00.
