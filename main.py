@@ -13,9 +13,10 @@ import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 from pathlib import Path
 
-from agent import Config, solve_task
+from agent import Budget, Config, solve_task
 from arena import llm
 from arena.client import MAX_NOTE, ArenaClient, ArenaError
 
@@ -54,6 +55,9 @@ def main() -> int:
     p.add_argument("--temperature", type=float, default=0.2)
     p.add_argument("--reasoning-effort", choices=["none", "low", "medium", "high"], default=None)
     p.add_argument("--jev-inbox-check", action="store_true", help="example: Jev flags injection-like content in read results")
+    p.add_argument("--no-auto-sources", action="store_true", help="submit only the model's own citations (A/B against sources.py)")
+    p.add_argument("--budget", type=float, default=float(os.environ["ARENA_BUDGET_USD"]) if os.environ.get("ARENA_BUDGET_USD") else None,
+                   help="stop spending at this many USD (default: 2.70 for a final run, no limit for dev)")
     p.add_argument("--prefetch", action="store_true", help="download every distinct file of the run once at start (blob cache)")
     p.add_argument("--yes", action="store_true", help="do not ask for confirmation on --kind final")
     a = p.parse_args()
@@ -107,8 +111,15 @@ def main() -> int:
         except ArenaError as e:
             print(f"prefetch skipped: {e}")
 
+    # Leave 3 minutes before the platform's deadline (final: 30 min after the run started; dev runs have none).
+    try:
+        deadline = datetime.fromisoformat(run.deadline_at.replace("Z", "+00:00")).timestamp() - 180
+    except (AttributeError, ValueError):
+        deadline = time.time() + 27 * 60 if run.kind == "final" else None
     cfg = Config(model=a.model, max_steps=a.max_steps, max_tokens=a.max_tokens, temperature=a.temperature,
-                 reasoning_effort=a.reasoning_effort, jev_inbox_check=a.jev_inbox_check)
+                 reasoning_effort=a.reasoning_effort, jev_inbox_check=a.jev_inbox_check,
+                 auto_sources=not a.no_auto_sources, deadline=deadline,
+                 budget=Budget(a.budget if a.budget is not None else 2.70 if run.kind == "final" else None, len(tasks)))
     tracker = llm.CostTracker()
     out_dir = Path("runs") / run.run_id
     out_dir.mkdir(parents=True, exist_ok=True)

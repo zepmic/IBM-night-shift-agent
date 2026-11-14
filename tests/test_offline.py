@@ -11,9 +11,17 @@ import run_pi
 assert parse_args('{"a": 1}') == {"a": 1}
 assert parse_args('```json\n{"a": 1}\n```') == {"a": 1}
 assert parse_args(None) == {}
+assert normalize_answer({'"token"': '"TOK-1"', "n": 2, "l": ['"a"', "b"]}) == {"token": "TOK-1", "n": 2, "l": ["a", "b"]}
+assert normalize_answer('"2026-11-14T12:00:00Z"') == "2026-11-14T12:00:00Z" and normalize_answer('say "hi"') == 'say "hi"'
+import agent as _agent
+_paths = {"/AGENTS.md", "/ops/change_calendar.csv", "/fleet/a.csv", "/fleet/b.json"} | {f"/docs/agreements/x{i}.{'pdf' if i % 2 else 'md'}" for i in range(30)}
+_tree = _agent.local_tree(_paths, "/")
+assert "/ops/: change_calendar.csv" in _tree and "/docs/agreements/: 30 files (15 .md, 15 .pdf)" in _tree and "/: AGENTS.md" in _tree and len(_tree) < 500, _tree
+assert _agent.local_tree(_paths, "/fleet/").splitlines()[1:] == ["/fleet/: a.csv, b.json"] and _agent.local_tree(_paths, "/nope") == "" and _agent.local_tree(None, "/") == ""
 assert normalize_answer('["S-1"]') == ["S-1"] and normalize_answer("42") == 42 and normalize_answer("B7") == "B7"
 msgs = [{"role": "tool", "content": "x" * 1000, "tool_call_id": str(i)} for i in range(8)]
-t = trim_history(msgs, Config(keep_full_outputs=2))
+t = trim_history(msgs, Config(keep_full_outputs=2, keep_small_chars=0))
+assert len(trim_history(msgs, Config(keep_full_outputs=2))[0]["content"]) == 1000  # small outputs stay
 assert len(t[0]["content"]) < 400 and len(t[-1]["content"]) == 1000
 tl = to_openai_tools([ToolSpec(name="read", description="d", args={"path": "file", "page": "optional page"})])
 assert tl[0]["function"]["parameters"]["required"] == ["path"]
@@ -141,3 +149,103 @@ try:
 finally:
     agent.llm.chat = real_chat
 print("offline tests ok")
+
+# --- local helpers added after the dev runs: compact rendering, table filter, hash, preloaded rule files -------------
+import hashlib
+import sources as _S
+
+
+class _Files:
+    FILES = {"/AGENTS.md": "# Rules\nOperator files: /AGENTS.md and /runbook.md. See /fleet/changes.md and /contacts.csv.\n",
+             "/runbook.md": "# Runbook\nrule 1\n", "/fleet/changes.md": "- ops-01 flagged\n",
+             "/tickets/IR-1.md": "---\nticket: IR-1\nstatus: closed\n---\nold request\n",
+             "/tickets/IR-2.md": "---\nticket: IR-2\nstatus: open\n---\nList the violations.\n",
+             "/logs/req.csv": "request_id,ts,actor,action,ticket,result,n\nRQ-1,2026-11-14T01:00:00Z,external:x,read,,ok,5\n"
+                              "RQ-2,2026-11-14T02:00:00Z,external:y,read,CHG-1,ok,12\nRQ-3,2026-11-14T03:00:00Z,ops-01,read,,ok,7\n"
+                              "RQ-4,2026-11-14T04:00:00Z,external:z,read,,denied,30\nRQ-5,2026-11-14T05:00:00Z,external:z,reader,,ok,2\n"}
+
+    def download_file(self, run_id, task_id, path):
+        return self.FILES[path].encode(), "text/plain"
+
+
+_fc, _ev = _Files(), _S.Evidence()
+_out = _agent._filter_rows(_fc, "r", "t", {"path": "/logs/req.csv", "where": [
+    {"column": "action", "op": "eq", "value": "read"}, {"column": "actor", "op": "startswith", "value": "external:"},
+    {"column": "ticket", "op": "empty"}, {"column": "result", "op": "ne", "value": "denied"}]}, _ev, 8000)
+assert _out.endswith('["RQ-1"]') and "1 of 5 rows match" in _out, _out
+assert _ev.candidates(["RQ-1"], []) == [{"path": "/logs/req.csv", "record": "RQ-1"}]  # the hits are citable
+_ids = lambda where: json.loads(_agent._filter_rows(_fc, "r", "t", {"path": "/logs/req.csv", "where": where}, _S.Evidence(), 8000).rsplit(": ", 1)[1])  # noqa: E731
+assert _ids([{"column": "n", "op": "gt", "value": 7}]) == ["RQ-2", "RQ-4"]  # numbers compare as numbers, not text
+assert _ids([{"column": "ts", "op": "ge", "value": "2026-11-14T04:00:00Z"}]) == ["RQ-4", "RQ-5"]
+assert _ids({"column": "actor", "op": "in", "value": ["ops-01", "external:y"]}) == ["RQ-2", "RQ-3"]
+assert "Columns: request_id" in _agent._filter_rows(_fc, "r", "t", {"path": "/logs/req.csv", "where": [{"column": "x", "op": "eq"}]}, _ev, 8000)
+assert "5 of 5 rows shown" in _agent._filter_rows(_fc, "r", "t", {"path": "/logs/req.csv"}, _ev, 8000)
+assert _agent._filter_rows(_fc, "r", "t", {"path": "/nope.csv"}, _ev, 8000).startswith("ERROR")
+assert _agent._sha256({"values": ["abc"]}).endswith(hashlib.sha256(b"abc").hexdigest()) and _agent._sha256({}).startswith("ERROR")
+
+_pre = _agent._preload(_fc, "r", "t", set(_Files.FILES))
+assert [(p, k) for p, k, _ in _pre] == [("/AGENTS.md", "rule"), ("/runbook.md", "rule"), ("/fleet/changes.md", "named"),
+                                        ("/tickets/IR-2.md", "ticket")], _pre   # closed ticket: history, not sent
+assert _pre[1][2] == "1| # Runbook\n2| rule 1" and _agent._preload(_fc, "r", "t", None) == [] and _agent._preload(_fc, "r", "t", {"/x.md"}) == []
+
+_r = _agent.render({"total": 2, "events": [{"file": "/l.jsonl", "line": 3, "agent": "a", "detail": 'say "hi"\nnow'}, {"file": "/l.jsonl", "line": 9, "agent": "b"}]})
+assert _r == 'total=2\nevents (file | line | agent | detail):\n/l.jsonl | 3 | a | say "hi" now\n/l.jsonl | 9 | b | ', _r
+assert _agent.render({"path": "/a.md", "start_line": 1, "end_line": 2, "total_lines": 2, "text": '1| a "q"\n2| b'}) == '/a.md lines 1-2 of 2\n1| a "q"\n2| b'
+assert _agent.render("tree") == "tree" and _agent.render({"found": False}) == '{"found": false}'
+print("helper tests ok")
+
+# --- spreadsheets in filter_rows (title rows above the header, numbers stored as text), long documents in parts ----
+import io as _io
+from openpyxl import Workbook as _Workbook
+
+_wb = _Workbook()
+_ws = _wb.active
+_ws.title = "transfers"
+for _row in (["Outbound transfer register"], [], ["tx_id", "agent_id", "target_host", "record_count", "status"],
+             ["TX-1", "ops-01", "evil.example", "12", "ok"], ["TX-2", "ops-02", "partner.example", 0, "ok"],
+             ["TX-3", "ops-01", "evil.example", 7, "blocked"]):
+    _ws.append(_row)
+_buf = _io.BytesIO()
+_wb.save(_buf)
+_Files.FILES["/security/x.xlsx"] = None
+
+
+class _Bin(_Files):
+    def download_file(self, run_id, task_id, path):
+        return (_buf.getvalue(), "application/xlsx") if path.endswith(".xlsx") else super().download_file(run_id, task_id, path)
+
+
+_ev2 = _S.Evidence()
+_out = _agent._filter_rows(_Bin(), "r", "t", {"path": "/security/x.xlsx", "where": [
+    {"column": "target_host", "op": "eq", "value": "evil.example"}, {"column": "record_count", "op": "gt", "value": 5}]}, _ev2, 8000)
+assert "sheet 'transfers': 2 of 3 rows match" in _out and "[4, 6]" in _out and '["TX-1", "TX-3"]' in _out, _out
+assert _ev2.candidates(["TX-3"], []) == [{"path": "/security/x.xlsx", "sheet": "transfers", "row": 6}]
+
+
+class _Doc:
+    def submit(self, *a):
+        return {"received": True}
+
+
+_long = "\n".join(f"{i}. paragraph {i} " + "x" * 80 for i in range(1, 200))
+_real_dl, _seen = _agent._download_file, []
+_agent._download_file = lambda *a, **k: _long
+_steps = iter([("download_file", {"path": "/d.docx"}), ("download_file", {"path": "/d.docx", "part": 3}),
+               ("download_file", {"path": "/d.docx", "part": 9}), ("submit", {"outcome": "OK", "answer": 1, "sources": []})])
+_real_chat = _agent.llm.chat
+
+
+def _chat(messages, **kw):
+    _seen[:] = [m["content"] for m in messages if m.get("role") == "tool"]
+    n, a = next(_steps)
+    return {"content": "", "tool_calls": [{"id": "c", "type": "function", "function": {"name": n, "arguments": json.dumps(a)}}]}
+
+
+_agent.llm.chat = _chat
+try:
+    _agent.solve_task(_Doc(), "r", Task(task_id="t1", instruction="x"), [], Config(route=False), llm.CostTracker())
+finally:
+    _agent.llm.chat, _agent._download_file = _real_chat, _real_dl
+assert _seen[0].startswith("[part 1 of 3; call download_file with part=2 for more]\n1. paragraph 1 ") and len(_seen[0]) < 8100
+assert _seen[1].startswith("[part 3 of 3, the last]") and _seen[1].rstrip().endswith("x") and _seen[2].startswith("ERROR: this file has only 3 parts")
+print("format tests ok")

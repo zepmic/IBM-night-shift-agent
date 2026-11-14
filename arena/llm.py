@@ -122,7 +122,8 @@ def _sdk_call(make, retries: int = RETRIES):
 
 def chat(messages: list[dict], *, model: str = MAIN_MODEL, tools: list[dict] | None = None,
          tool_choice: Any = None, max_tokens: int = 4096, temperature: float | None = 0.2,
-         reasoning_effort: str | None = None, tracker: CostTracker | None = None) -> dict:
+         reasoning_effort: str | None = None, tracker: CostTracker | None = None,
+         timeout: float | None = None) -> dict:
     """One chat/completions call. Returns the assistant ``message`` as a plain dict.
 
     Notes on reasoning models: thinking tokens count against ``max_tokens`` and cost
@@ -144,7 +145,9 @@ def chat(messages: list[dict], *, model: str = MAIN_MODEL, tools: list[dict] | N
     if tools:
         kwargs["tools"] = tools
         kwargs["tool_choice"] = tool_choice or "auto"
-    resp = _sdk_call(lambda: _client().chat.completions.create(**kwargs))
+    # `timeout` (near the run deadline): one short attempt instead of the default 180 s with 5 retries
+    cl = _client().with_options(timeout=timeout, max_retries=0) if timeout else _client()
+    resp = _sdk_call(lambda: cl.chat.completions.create(**kwargs), **({"retries": 0} if timeout else {}))
     if tracker and resp.usage is not None:
         tracker.add(model, resp.usage.model_dump())
     if not resp.choices:

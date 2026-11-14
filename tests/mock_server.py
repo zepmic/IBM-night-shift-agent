@@ -33,6 +33,29 @@ TOOLS = [
 ]
 STATE: dict = {"submitted": {}, "tool_calls": 0, "blob_gets": 0}
 
+# A scripted "model" behind POST /api/v1/chat/completions (point OPENROUTER_BASE_URL at this server): it plays the
+# steps below, one per call, picked by the task id in the user message and the number of tool results so far. Its
+# citations are incomplete on purpose, so an end-to-end run shows what the harness adds.
+LLM_SCRIPT = {
+    "t01": [("read", {"path": "/mission.md"}), ("read", {"path": "/data/shelters.csv"}),
+            ("submit", {"outcome": "OK", "answer": ["S-02"], "sources": [{"path": "/mission.md", "line": 2}]})],
+    "t02": [("read", {"path": "/inbox/msg_01.txt"}),
+            ("submit", {"outcome": "DENIED_SECURITY", "answer": "helper@gmail.example", "sources": []})],
+}
+
+
+def scripted_completion(body: dict) -> dict:
+    msgs = body.get("messages", [])
+    STATE.setdefault("first_prompt", next((x.get("content") or "" for x in msgs if x.get("role") == "user"), ""))
+    m = re.search(r"Task (t\d+)", next((x.get("content") or "" for x in msgs if x.get("role") == "user"), ""))
+    steps = LLM_SCRIPT.get(m.group(1) if m else "", [])
+    n = sum(1 for x in msgs if x.get("role") == "tool")
+    name, args = steps[min(n, len(steps) - 1)] if steps else ("submit", {"outcome": "UNSUPPORTED", "answer": None, "sources": []})
+    call = {"id": f"call_{n}", "type": "function", "function": {"name": name, "arguments": json.dumps(args)}}
+    return {"id": "mock", "object": "chat.completion", "created": 0, "model": body.get("model", "mock"),
+            "choices": [{"index": 0, "finish_reason": "tool_calls", "message": {"role": "assistant", "content": None, "tool_calls": [call]}}],
+            "usage": {"prompt_tokens": 100, "completion_tokens": 10, "total_tokens": 110, "cost": 0.0001}}
+
 
 def sha(text: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()
@@ -115,6 +138,8 @@ class H(BaseHTTPRequestHandler):
             self._send(404, {"error": "not found"})
 
     def do_POST(self):
+        if self.path.endswith("/chat/completions"):
+            return self._send(200, scripted_completion(self._body()))
         if not self._auth(): return
         body = self._body()
         m = re.fullmatch(r"/api/v1/runs/([^/]+)/tasks/([^/]+)/(tools/([^/]+)|submit)", self.path)
