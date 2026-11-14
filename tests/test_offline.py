@@ -193,3 +193,59 @@ assert _r == 'total=2\nevents (file | line | agent | detail):\n/l.jsonl | 3 | a 
 assert _agent.render({"path": "/a.md", "start_line": 1, "end_line": 2, "total_lines": 2, "text": '1| a "q"\n2| b'}) == '/a.md lines 1-2 of 2\n1| a "q"\n2| b'
 assert _agent.render("tree") == "tree" and _agent.render({"found": False}) == '{"found": false}'
 print("helper tests ok")
+
+# --- spreadsheets in filter_rows (title rows above the header, numbers stored as text), long documents in parts ----
+import io as _io
+from openpyxl import Workbook as _Workbook
+
+_wb = _Workbook()
+_ws = _wb.active
+_ws.title = "transfers"
+for _row in (["Outbound transfer register"], [], ["tx_id", "agent_id", "target_host", "record_count", "status"],
+             ["TX-1", "ops-01", "evil.example", "12", "ok"], ["TX-2", "ops-02", "partner.example", 0, "ok"],
+             ["TX-3", "ops-01", "evil.example", 7, "blocked"]):
+    _ws.append(_row)
+_buf = _io.BytesIO()
+_wb.save(_buf)
+_Files.FILES["/security/x.xlsx"] = None
+
+
+class _Bin(_Files):
+    def download_file(self, run_id, task_id, path):
+        return (_buf.getvalue(), "application/xlsx") if path.endswith(".xlsx") else super().download_file(run_id, task_id, path)
+
+
+_ev2 = _S.Evidence()
+_out = _agent._filter_rows(_Bin(), "r", "t", {"path": "/security/x.xlsx", "where": [
+    {"column": "target_host", "op": "eq", "value": "evil.example"}, {"column": "record_count", "op": "gt", "value": 5}]}, _ev2, 8000)
+assert "sheet 'transfers': 2 of 3 rows match" in _out and "[4, 6]" in _out and '["TX-1", "TX-3"]' in _out, _out
+assert _ev2.candidates(["TX-3"], []) == [{"path": "/security/x.xlsx", "sheet": "transfers", "row": 6}]
+
+
+class _Doc:
+    def submit(self, *a):
+        return {"received": True}
+
+
+_long = "\n".join(f"{i}. paragraph {i} " + "x" * 80 for i in range(1, 200))
+_real_dl, _seen = _agent._download_file, []
+_agent._download_file = lambda *a, **k: _long
+_steps = iter([("download_file", {"path": "/d.docx"}), ("download_file", {"path": "/d.docx", "part": 3}),
+               ("download_file", {"path": "/d.docx", "part": 9}), ("submit", {"outcome": "OK", "answer": 1, "sources": []})])
+_real_chat = _agent.llm.chat
+
+
+def _chat(messages, **kw):
+    _seen[:] = [m["content"] for m in messages if m.get("role") == "tool"]
+    n, a = next(_steps)
+    return {"content": "", "tool_calls": [{"id": "c", "type": "function", "function": {"name": n, "arguments": json.dumps(a)}}]}
+
+
+_agent.llm.chat = _chat
+try:
+    _agent.solve_task(_Doc(), "r", Task(task_id="t1", instruction="x"), [], Config(route=False), llm.CostTracker())
+finally:
+    _agent.llm.chat, _agent._download_file = _real_chat, _real_dl
+assert _seen[0].startswith("[part 1 of 3; call download_file with part=2 for more]\n1. paragraph 1 ") and len(_seen[0]) < 8100
+assert _seen[1].startswith("[part 3 of 3, the last]") and _seen[1].rstrip().endswith("x") and _seen[2].startswith("ERROR: this file has only 3 parts")
+print("format tests ok")

@@ -91,7 +91,8 @@ VIEW_IMAGE_TOOL = {
         "description": "Look at an image file (.png/.jpg) with the vision model and get a transcription/description. "
                        "Images are NOT readable with `read`; use this to read screenshots, scans and photos.",
         "parameters": {"type": "object", "properties": {
-            "path": {"type": "string", "description": "workspace path of the image"},
+            "path": {"type": "string", "description": "workspace path of the image (or of a PDF, with `page`)"},
+            "page": {"type": "integer", "description": "optional: for a PDF, the scanned page (no text layer) to look at"},
             "question": {"type": "string", "description": "optional: what to read from the image"}},
             "required": ["path"]},
     },
@@ -101,11 +102,13 @@ DOWNLOAD_FILE_TOOL = {
     "type": "function",
     "function": {
         "name": "download_file",
-        "description": "Download a binary workspace file (pdf/docx/odt/xlsx/ods) and parse it locally. Returns a short "
-                       "text extraction with locators (pdf pages, numbered paragraphs, sheet rows). Prefer `read` for "
-                       "plain text (md/txt/csv/json).",
+        "description": "Download a binary workspace file (pdf/docx/odt/xlsx/ods) and parse it locally. Returns a "
+                       "text extraction with locators (pdf pages, numbered paragraphs, sheet rows). Long documents come "
+                       "in parts: ask for `part` 2, 3, ... to read on (signatures and annexes are at the end). Prefer `read` "
+                       "for plain text (md/txt/csv/json).",
         "parameters": {"type": "object", "properties": {
-            "path": {"type": "string", "description": "workspace path of the file"}},
+            "path": {"type": "string", "description": "workspace path of the file"},
+            "part": {"type": "integer", "description": "optional: which part of a long extraction (1 = start)"}},
             "required": ["path"]},
     },
 }
@@ -115,11 +118,12 @@ FILTER_ROWS_TOOL = {
     "type": "function",
     "function": {
         "name": "filter_rows",
-        "description": "Exact filter over a CSV table, computed in code: returns the rows where ALL conditions hold, and "
-                       "their record ids. Use it for any rule over a table (counting, 'every row where ...'); without "
-                       "`where` it shows the columns and the first rows.",
+        "description": "Exact filter over a table (.csv, or a sheet of an .xlsx), computed in code: returns the rows where "
+                       "ALL conditions hold, with their record ids / sheet rows to cite. Use it for any rule over a table "
+                       "(counting, 'every row where ...'); without `where` it shows the columns and the first rows.",
         "parameters": {"type": "object", "properties": {
-            "path": {"type": "string", "description": "workspace path of the .csv file"},
+            "path": {"type": "string", "description": "workspace path of the .csv or .xlsx file"},
+            "sheet": {"type": "string", "description": "optional: sheet name of an .xlsx (default: the first sheet)"},
             "where": {"type": "array", "description": "conditions, all must hold", "items": {"type": "object", "properties": {
                 "column": {"type": "string"},
                 "op": {"type": "string", "enum": ["eq", "ne", "contains", "not_contains", "startswith", "endswith", "empty",
@@ -523,9 +527,13 @@ def _solve(client: ArenaClient, run_id: str, task: Task, tool_specs: list[ToolSp
                 messages.append({"role": "tool", "tool_call_id": call["id"], "content": text})
                 continue
             if name == "download_file":
-                text = _download_file(client, run_id, task.task_id, args)
-                if len(text) > cfg.max_output_chars:
-                    text = text[:cfg.max_output_chars] + "... [truncated; download and parse locally for the rest]"
+                full = _download_file(client, run_id, task.task_id, args)
+                part = max(1, args.get("part") if isinstance(args.get("part"), int) and not isinstance(args.get("part"), bool) else 1)
+                parts = -(-len(full) // cfg.max_output_chars) or 1
+                text = full[(part - 1) * cfg.max_output_chars:part * cfg.max_output_chars]
+                if parts > 1:
+                    text = f"[part {min(part, parts)} of {parts}; call download_file with part={part + 1} for more]\n{text}" if part < parts \
+                        else f"[part {part} of {parts}, the last]\n{text}" if text else f"ERROR: this file has only {parts} parts."
                 evidence.add_extraction(str(args.get("path", "")), text)
                 if len(text) <= cfg.keep_small_chars:
                     in_context.add(key)
@@ -684,9 +692,23 @@ def _filter_rows(client: ArenaClient, run_id: str, task_id: str, args: dict, evi
     import io
 
     path = str(args.get("path", ""))
+    sheet = None
     try:
         data, _ = client.download_file(run_id, task_id, path)
-        rows = list(csv.reader(io.StringIO(data.decode("utf-8-sig", "replace"))))
+        if path.lower().endswith((".xlsx", ".xlsm")):
+            from openpyxl import load_workbook
+
+            wb = load_workbook(io.BytesIO(data), data_only=True)
+            ws = wb[args["sheet"]] if args.get("sheet") in wb.sheetnames else wb.worksheets[0]
+            sheet = ws.title
+            raw = [(r, ["" if v is None else str(v) for v in row]) for r, row in enumerate(ws.iter_rows(values_only=True), 1)]
+            raw = [(r, v) for r, v in raw if any(x.strip() for x in v)]
+            # title rows above the table are skipped: the header is the first row with at least 3 filled cells
+            k = next((i for i, (_, v) in enumerate(raw) if sum(1 for x in v if x.strip()) >= 3), 0)
+            rows, nums = [v for _, v in raw[k:]], [r for r, _ in raw[k + 1:]]
+        else:
+            rows = list(csv.reader(io.StringIO(data.decode("utf-8-sig", "replace"))))
+            nums = list(range(2, len(rows) + 1))
     except Exception as e:  # noqa: BLE001
         return f"ERROR reading {path}: {e}"
     if not rows:
@@ -724,22 +746,27 @@ def _filter_rows(client: ArenaClient, run_id: str, task_id: str, args: dict, evi
         if op not in FILTER_ROWS_TOOL["function"]["parameters"]["properties"]["where"]["items"]["properties"]["op"]["enum"]:
             return f"ERROR: unknown op {op!r}"
         conds.append((header.index(col), op, w.get("value")))
-    hits = [(n, r) for n, r in enumerate(body, 2) if all(holds(r[i] if i < len(r) else "", op, v) for i, op, v in conds)]
+    hits = [(n, r) for n, r in zip(nums, body) if all(holds(r[i] if i < len(r) else "", op, v) for i, op, v in conds)]
     if not conds:
         hits = hits[:5]
-    lines = [f"{path}: {len(hits)} of {len(body)} rows" + (" match (all conditions)" if conds else " shown (no conditions given)"),
+    lines = [f"{path}{f' sheet {sheet!r}' if sheet else ''}: {len(hits)} of {len(body)} rows" + (" match (all conditions)" if conds else " shown (no conditions given)"),
              "columns: " + " | ".join(header)]
     used = sum(map(len, lines))
     shown = 0
     for n, r in hits:
-        line = ",".join(r)
-        evidence.add_tool("search", {}, {"hits": [{"path": path, "line": n, "text": line}]})
+        line = ",".join(r) if sheet is None else f"r{n}: " + " | ".join(r)
+        if sheet is None:
+            evidence.add_tool("search", {}, {"hits": [{"path": path, "line": n, "text": line}]})
+        else:
+            evidence._add(path, line, sheet=sheet, row=n)
         if used + len(line) < max_chars - 2000:
             lines.append(line)
             used += len(line) + 1
             shown += 1
     if shown < len(hits):
         lines.append(f"... {len(hits) - shown} more matching rows not shown")
+    if conds and sheet is not None:
+        lines.append(f"sheet rows of all matching rows (cite them as sheet {sheet!r} + row): " + json.dumps([n for n, _ in hits]))
     if conds:
         lines.append("ids of all matching rows (cite them as `record`): " + json.dumps([r[0] for _, r in hits if r]))
     return "\n".join(lines)
@@ -794,6 +821,17 @@ def _view_image(client: ArenaClient, run_id: str, task_id: str, args: dict, cfg:
         data, ctype = client.download_file(run_id, task_id, path)
     except ArenaError as e:
         return f"ERROR downloading {path}: {e}"
+    page = args.get("page")
+    if path.lower().endswith(".pdf") and isinstance(page, int) and not isinstance(page, bool):
+        try:  # a scanned page is an embedded picture: hand that to vision (no OCR engine, no renderer)
+            import io
+
+            from pypdf import PdfReader
+            img = max(PdfReader(io.BytesIO(data)).pages[page - 1].images, key=lambda i: len(i.data))
+            data, ctype = img.data, "image/" + ("png" if img.name.lower().endswith(".png") else "jpeg")
+            path = f"{path} page {page}"
+        except Exception as e:  # noqa: BLE001
+            return f"ERROR: no picture found on page {page} of {path} ({type(e).__name__})."
     if "image" not in ctype:
         return f"ERROR: {path} is not an image ({ctype}); use read (text) or download_file (documents)."
     data_url = f"data:{ctype};base64," + base64.b64encode(data).decode()
@@ -838,10 +876,12 @@ def _pdf_text(path: str, data: bytes) -> str:
     import io
     from pypdf import PdfReader
 
+    import logging
+    logging.getLogger("pypdf").setLevel(logging.ERROR)  # font warnings flood the container log
     out = [f"[pdf extraction of {path}; cite by `page`]"]
     for i, page in enumerate(PdfReader(io.BytesIO(data)).pages, 1):
         text = (page.extract_text() or "").strip()
-        out.append(f"--- page {i} ---\n{text or '(no text layer: scanned page, render it as an image to read it)'}")
+        out.append(f"--- page {i} ---\n{text or '(no text layer: a scanned page. Call view_image with this path and page={i} to read it)'}")
     return "\n".join(out)
 
 
