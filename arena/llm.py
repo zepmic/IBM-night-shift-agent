@@ -159,7 +159,7 @@ def chat(messages: list[dict], *, model: str = MAIN_MODEL, tools: list[dict] | N
 
 
 def describe_image(data_url: str, question: str = "", *, model: str = MAIN_MODEL,
-                   max_tokens: int = 700, tracker: CostTracker | None = None) -> str:
+                   max_tokens: int = 1200, tracker: CostTracker | None = None) -> str:
     """One vision call: ask the model to read/transcribe an image passed as a base64 data URL.
 
     The fixed model accepts text + images. The image is sent as an ``image_url`` content part; no extra

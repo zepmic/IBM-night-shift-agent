@@ -280,8 +280,8 @@ class Config:
     max_tokens: int = 4096
     temperature: float | None = 0.2
     reasoning_effort: str | None = None
-    keep_full_outputs: int = 3      # newest N tool outputs stay untruncated
-    keep_small_chars: int = 6000    # outputs up to this size are never truncated (rule files, small tables)
+    keep_full_outputs: int = 2      # newest N tool outputs stay untruncated (3 -> 2: cost, 15:10)
+    keep_small_chars: int = 4000    # outputs up to this size are never truncated (rule files, small tables)
     old_output_chars: int = 300     # older ones are cut to this length
     max_output_chars: int = 8000    # hard cap per tool output
     jev_inbox_check: bool = False   # example: Jev flags suspicious inbox/report content
@@ -514,6 +514,7 @@ def _solve(client: ArenaClient, run_id: str, task: Task, tool_specs: list[ToolSp
     evidence = srcs.Evidence()
     in_context: set[str] = set()  # read-only calls whose full output stays in the conversation (never trimmed)
     local_seen: set[str] = set()  # local tool calls already answered (same args -> same result)
+    local_out: dict[str, str] = {}  # their outputs, to resend one the history trimmed
     # The workspace map up front (manifest: no model call, ~350 tokens): the baseline spent up to 15 steps looking for
     # a file whose directory the platform's truncated tree did not show.
     paths = _existing_paths(client, run_id, task.task_id)
@@ -613,6 +614,12 @@ def _solve(client: ArenaClient, run_id: str, task: Task, tool_specs: list[ToolSp
                 messages.append({"role": "tool", "tool_call_id": call["id"], "content": f"ERROR: {e}"})
                 continue
             key = name + json.dumps(args, sort_keys=True, default=str)
+            prev = local_out.get(key)
+            if key in local_seen and prev and len(prev) > cfg.keep_small_chars and not prev.startswith(PINNED):
+                # its earlier output may have been cut from the history: hand it back in full instead of refusing
+                messages.append({"role": "tool", "tool_call_id": call["id"], "content": "(same call as before; its result again)\n" + prev})
+                trace({"event": "repeat", "name": name, "args": args, "local": True, "resent": True})
+                continue
             if key in local_seen:  # run_vO t03: the same filter_rows 7x, paging the table in between
                 messages.append({"role": "tool", "tool_call_id": call["id"], "content":
                                  "You already made this exact call; the result would be identical. If the rule needs "
@@ -707,6 +714,7 @@ def _solve(client: ArenaClient, run_id: str, task: Task, tool_specs: list[ToolSp
                 text = _manifest_audit(client, run_id, task.task_id, args, evidence, tracker) if name == "manifest_audit" else \
                     _incident_facts(client, run_id, task.task_id, args, evidence, cfg, tracker) if name == "incident_facts" \
                     else _board_triage(client, run_id, task.task_id, args, evidence, tracker)
+                local_out[key] = text
                 trace({"event": "tool", "name": name, "args": args, "output": text, "local": True})
                 messages.append({"role": "tool", "tool_call_id": call["id"], "content": text})
                 continue
@@ -716,11 +724,18 @@ def _solve(client: ArenaClient, run_id: str, task: Task, tool_specs: list[ToolSp
                     else _sha256(args) if name == "sha256" else _earliest_slot(client, run_id, task.task_id, args) \
                     if name == "earliest_slot" else _capabilities(client, run_id, task.task_id, args, cfg, tracker, evidence) \
                     if name == "capabilities" else _review_access(client, run_id, task.task_id, args, evidence, cfg, tracker)
+                local_out[key] = text
                 trace({"event": "tool", "name": name, "args": args, "output": text, "local": True})
                 messages.append({"role": "tool", "tool_call_id": call["id"], "content": text})
                 continue
             if name == "view_image":
-                text = _view_image(client, run_id, task.task_id, args, cfg, tracker)
+                # run_Go_5ItDDXKIl t25/t37: a question-only reading dropped "effective from <future date>; until then
+                # the existing clause remains in force" -> wrong deadline. The page comes verbatim first, then the answer.
+                q = str(args.get("question", "")).strip()
+                text = _view_image(client, run_id, task.task_id, {**args, "question": (
+                    "First transcribe ALL text in this image verbatim, line by line (dates, 'effective from', validity "
+                    "conditions, signatures, stamps, handwritten notes and small print included). Then, after a line "
+                    "'ANSWER:', answer this question from it: " + q) if q else ""}, cfg, tracker)
                 if not text.startswith("ERROR"):
                     evidence.add_image(str(args.get("path", "")), text)
                 if len(text) <= cfg.keep_small_chars:
