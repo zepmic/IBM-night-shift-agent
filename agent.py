@@ -609,10 +609,10 @@ def _solve(client: ArenaClient, run_id: str, task: Task, tool_specs: list[ToolSp
     # Which breach-notification clause is in force for a customer: computed in code (base clause, signed amendments
     # effective by now, the latest wins); run_Go_5ItDDXKIl t25/t37 and run_32SoTk4qmWz4 t36 took a future or unsigned one.
     if re.search(r"notif\w*[^.]{0,60}(deadline|window|hours)|(deadline|window)[^.]{0,40}notif", policy.authorised_text or "", re.I) \
-            and re.search(r"in force|right now|currently|applies|applicable", policy.authorised_text or "", re.I):
+            and re.search(r"in force|right now|currently|applies|applicable|agreement", policy.authorised_text or "", re.I):
         try:
             _p, _r, _v = _workspace(client, run_id, task.task_id, cfg, tracker)
-            ans, cites, expl = incident.agreement_terms(_r, _p, policy.authorised_text or "", _v)
+            ans, cites, expl = incident.agreement_terms(_r, _p, re.sub(r"[ \t]*\n[ \t]*", " ", policy.authorised_text or ""), _v)
         except Exception as e:  # noqa: BLE001
             ans, cites, expl = None, [], f"{type(e).__name__}: {e}"
         if ans:

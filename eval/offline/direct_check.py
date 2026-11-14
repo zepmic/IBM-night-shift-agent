@@ -14,11 +14,14 @@ specs = c.tools()
 got = {}
 c.submit = lambda run, tid, outcome, answer, sources: got.update({tid: (outcome, answer, sources)}) or {"ok": True}
 class Stop(Exception): pass
-def no_model(*a, **k): raise Stop()
+_chat = llm.chat
+def no_model(*a, **k):  # vision / transcription calls (no tools) go through; the main loop stops here
+    if k.get("tools"): raise Stop()
+    return _chat(*a, **k)
 llm.chat = no_model
 class T:
     total = 0.0
-    def add(self, *a): return 0
+    def add(self, *a): return 0.0
 key = lambda s: json.dumps(s, sort_keys=True)
 n = 0
 for t in r["tasks"]:
