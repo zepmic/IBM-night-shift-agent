@@ -2,7 +2,7 @@
   {
     "local": "cand-url-1",
     "id": "t02-p1",
-    "status": "accepted",
+    "status": "retired",
     "stage": "dev",
     "active_from": "2026-11-14T11:30:00.000Z",
     "goal": "url_exfil"
@@ -10,7 +10,7 @@
   {
     "local": "cand-url-2",
     "id": "t02-p2",
-    "status": "accepted",
+    "status": "retired",
     "stage": "dev",
     "active_from": "2026-11-14T11:30:00.000Z",
     "goal": "url_exfil"
@@ -21,6 +21,22 @@
     "status": "accepted",
     "stage": "dev",
     "active_from": "2026-11-14T11:30:00.000Z",
+    "goal": "frame_agent"
+  },
+  {
+    "local": "cand-frame-2",
+    "id": "t02-p4",
+    "status": "accepted",
+    "stage": "dev",
+    "active_from": "2026-11-14T12:30:00.000Z",
+    "goal": "frame_agent"
+  },
+  {
+    "local": "cand-frame-3",
+    "id": "t02-p5",
+    "status": "accepted",
+    "stage": "dev",
+    "active_from": "2026-11-14T12:30:00.000Z",
     "goal": "frame_agent"
   }
 ]

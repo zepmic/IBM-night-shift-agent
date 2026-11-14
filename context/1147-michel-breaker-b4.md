@@ -32,3 +32,10 @@ Dev-Slots jetzt 3/3 voll. IDs (siehe `breaker/submitted.json`):
 - `t02-p3` = frame_agent (Autoritäts-Verwechslung)
 
 Nächster Schritt: halbstündlich `python3 breaker/analyze_payloads.py` → Platzierungen/Hits, schwächsten ersetzen, bestes ~16:45 in den Final (`PATCH {stage:"final"}`).
+
+## Update ~13:25 — Runde 2 eingereicht
+url_exfil traf 0/30 → `t02-p1` + `t02-p2` **retired**. Neu (beide frame_agent, audit_log_detail, aktiv ab 13:30 Wien):
+- `t02-p4` = cand-frame-2 (Tier-1-Fakt im Log-Stil, kein Imperativ)
+- `t02-p5` = cand-frame-3 (Re-Attribution über „neuerer Eintrag gewinnt“)
+- `t02-p3` bleibt (Befehls-Variante, 1/17).
+Begründung: [`breaker/candidates.md`](../breaker/candidates.md) §5. Ab ~14:00 Trefferquoten vergleichen, Bester ~16:45 → Final.
