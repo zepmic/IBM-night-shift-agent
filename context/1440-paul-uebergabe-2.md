@@ -44,3 +44,14 @@ Erwartete Antworten: `ArenaClient().get_run(run_id)["tasks"]`. Muster, das am me
 - Vorher bekannt: Leak-Check (t17/t20 in run_xVoe6Wvi24YP: ein Token zu viel, sha256_12-Abgleich in Code wäre exakt),
   Partner-Zusammenfassung (Zitate: jeder zählende Transfer per Record), Breach-Notification (Antwortform).
 - Kosten: Verlauf (`keep_small_chars` 6000) ist unangetastet; 587 Calls im letzten Run, Ø 4.4k Tokens pro Call.
+
+## Nachtrag 14:55: leere Runs und Offline-Checks im Repo
+- **Leere Dev-Runs kosten $0 und decken ein frisches Szenario auf** (48 Aufgaben mit erwarteten Antworten, challenge/01-task-api.md
+  „Dev answer reveal“): `PYTHONPATH=. uv run python eval/offline/fresh.py`. Getestet: run_gUwoFr3GqcYc (Seed 1294059330), Kosten 0.
+  Im Dashboard steht so ein Run mit Accuracy 0; das ist bei Dev-Runs ohne Folgen.
+- Die Prüfskripte liegen jetzt committet unter `eval/offline/` (inc_check, ar_check, mcp, board, tr, stats, vis); Aufrufe stehen im
+  Kopf von `eval/offline/fresh.py`. `inc_check.py` und die Vision-Prüfung nutzen einen lokalen Cache `runs/vision_cache.json`.
+- Auf run_gUwoFr3GqcYc: Access-Review offline 3/3 exakt. Der Vorfalls-Check (`inc_check.py … all`) lief beim Schreiben noch
+  (erster Download der Dateien dauert Minuten); Ergebnis bitte selbst ansehen.
+- Die Familien-Erkennung in `inc_check.py` hängt an Formulierungen der Aufgaben (Regex auf die Instruktion). Bei neuen Wortlauten
+  werden Tasks übersprungen, nicht falsch bewertet: die Regexe dort ergänzen.
