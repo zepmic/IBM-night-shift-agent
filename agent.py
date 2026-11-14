@@ -545,8 +545,8 @@ def _solve(client: ArenaClient, run_id: str, task: Task, tool_specs: list[ToolSp
     policy = state["policy"] = _build_policy(client, run_id, task, paths, pre, route, mutating,
                                              task.instruction + "".join("\n" + x[2] for x in tickets if delegated))
     tools = [t for t in to_openai_tools(tool_specs) if t["function"]["name"] not in mutating - policy.allowed] \
-        + [VIEW_IMAGE_TOOL, DOWNLOAD_FILE_TOOL, FILTER_ROWS_TOOL, SHA256_TOOL, EARLIEST_SLOT_TOOL,
-           CAPABILITIES_TOOL, REVIEW_ACCESS_TOOL, INCIDENT_TOOL, BOARD_TOOL, MCP_TOOL, CONTACTS_TOOL, SUBMIT_TOOL]
+        + [VIEW_IMAGE_TOOL, DOWNLOAD_FILE_TOOL, FILTER_ROWS_TOOL] + _special_tools(policy.authorised_text or task.instruction) \
+        + [INCIDENT_TOOL, SUBMIT_TOOL]
     # The rule files and the open ticket come with the task: reading them cost 2-4 model calls per task.
     labels = {"rule": "OPERATOR FILE", "named": "FILE NAMED IN THE RULES",
               "ticket": "OPEN TICKET (the task instruction sends you to the ticket queue: this is your task)"}
@@ -916,6 +916,24 @@ def _fill_sheets(sources: list, client: ArenaClient, run_id: str, task_id: str) 
 
 
 PRELOAD_MAX_CHARS = 6000  # per file
+
+
+# Cost: every tool description goes out with every model call (local ones alone ~2.8k tokens). A specialised tool
+# rides along only when the authorised text (instruction + open ticket) touches its subject; a call by name still works.
+SPECIAL_TOOLS = [
+    (r"leak|hash|sha-?256|fingerprint|paste|dump", "SHA256_TOOL"),
+    (r"rotat|slot|freeze|calendar|contain|schedul|maintenance", "EARLIEST_SLOT_TOOL"),
+    (r"trifecta|capabilit|delegat|permission|privilege|scope|chain|access", "CAPABILITIES_TOOL"),
+    (r"access|request|grant|review", "REVIEW_ACCESS_TOOL"),
+    (r"board|post|inject|notice|message id", "BOARD_TOOL"),
+    (r"mcp|manifest|integration|server|tool description", "MCP_TOOL"),
+    (r"domain|indicator|ioc|contact|destination|scan", "CONTACTS_TOOL"),
+]
+
+
+def _special_tools(text: str) -> list[dict]:
+    t = text or ""
+    return [globals()[name] for rx, name in SPECIAL_TOOLS if re.search(rx, t, re.I)]
 
 
 TICKET_VISION_Q = ("This is a scanned ticket. First line of your answer: exactly `status: open` or `status: closed`, as the "
