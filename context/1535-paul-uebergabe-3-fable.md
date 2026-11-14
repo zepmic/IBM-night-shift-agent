@@ -75,3 +75,39 @@ Seeds streuen stark (±0.03); ein einzelner Run ist kein Beweis. cost_score lieg
   ts in [valid_from, valid_until), vor revoked_at) braucht `filter_rows` mit `{"op": "no_match", ...}`; das Modell nutzt es
   nicht. Lösung: POLICY.md-Bedingungen in Code auf eine filter_rows-Spezifikation abbilden und das Ergebnis vorab beilegen
   (wie review_access), mit Test gegen einen leeren Dev-Run.
+
+## Nachtrag 15:55: Stand für Fable (ab 16:00)
+**main = 2a6d810** (alle Tests grün). Seit 4de7e02 neu: Wiederholungs-Schleife behoben (Kostenfehler), Werkzeug-Beschreibungen
+nur bei passendem Thema (`SPECIAL_TOOLS` in agent.py), Request-Log-Policy als Filter in Code (`_policy_spec`, offline 4/4).
+
+| Run | Code | Accuracy | Kosten | final |
+|---|---|---|---|---|
+| run_m3AU4AsnXI6B | 4de7e02 (Demo-Build) | 0.899 | $0.62 | 0.577 |
+| run 12 (lief beim Schreiben) | 2a6d810 | siehe Dashboard / `GET /runs/<id>` | | |
+
+**Kosten zählen die Hälfte:** `final = A · (0.5 + 0.5 · C)`, C logarithmisch zwischen Floor und Cap des Feldes. Halbe Kosten
+≈ +0.15–0.2 auf C ≈ +0.08 final. Unser C liegt bei 0.28–0.34: hier ist am meisten zu holen.
+
+### Kostenhebel, konkret (nach geschätztem Nutzen)
+1. **Berechnete Antworten direkt abgeben, ohne weitere Modell-Schritte.** review_access, agreement_terms, leak_check, Policy-
+   Filter, manifest_audit, board_triage, capabilities liefern fertige Antworten; das Modell braucht danach noch 2–4 Calls à
+   ~6k Tokens. Wenn die Aufgabe nur das Ergebnis verlangt (sorted JSON array / JSON-Objekt der berechneten Form) und keine
+   Aktion: direkt `submit` aus dem Harness (Zitate sind schon berechnet: `evidence.must_cite` / `list_cites`).
+2. **Owner-/E-Mail-/Token-Nachschlagen ins Faktenblatt.** Viele Vorfalls-Tasks machen danach 4–7 `filter_rows` auf
+   agents.csv / tokens.csv / contacts.csv (Owner, verifizierte E-Mail, Service). Im Faktenblatt pro genanntem Agent/Token
+   gleich Owner + verifizierte E-Mail + Service mit Record-Zitat ausgeben.
+3. **Grundlast pro Call senken**: pro Call gehen Systemprompt (3.4k Zeichen) + vorgeladene Regeldateien (AGENTS.md ~4k,
+   runbook ~4k, changes.md, Standing Order) + Baum + Werkzeug-Schemas mit. Ideen: Baum nur bei Bedarf, Regeldateien nur die
+   Abschnitte zur Aufgabe, Plattform-Werkzeuge ebenfalls nach Thema filtern (wie SPECIAL_TOOLS).
+4. Verlauf: `old_output_chars` 300, `keep_full_outputs` 2, `keep_small_chars` 4000. Messen, ob 1/2000 schadet.
+5. `max_steps` 14 und `task_cost_cap` 0.12: Tasks über ~10 Schritte sind meist verloren; messen mit 10 / 0.05.
+Jede Änderung mit einem vollen Dev-Run bestätigen (Kosten stehen in `platform finish`), nie zwei Runs gleichzeitig.
+
+### Genauigkeit, verbleibend
+- Reihenfolge-Fragen (Zuordnung jetzt in Code, im Run noch unbestätigt), Partner-Zusammenfassung (Zitate aus internal_notes),
+  einzelne Inbox-Tasks (run_m3AU4AsnXI6B t10: 0).
+
+### Final-Abgabe (16:30–17:00)
+Commit auf main, `git archive -o submission.tar.gz HEAD`, `POST /api/v1/submissions` → PUT des Archivs auf `upload.url`
+(Header aus `upload.headers`) → `POST /api/v1/submissions/<id>/ready`. Dann bestätigt ein Mensch im Dashboard
+„Prepared by your agent“ als **final submission**. Vorher Docker-Build lokal prüfen (README / AGENTS.md „Container contract“).
