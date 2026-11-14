@@ -827,29 +827,38 @@ def earliest_slot(rows: list[dict], service: str, now: str, duration_min: int = 
     active entry of `service`. Returns (start ISO, ids of the entries that pushed it)."""
     from datetime import datetime, timedelta, timezone
 
-    def col(r: dict, *names: str) -> str:
-        return next((str(v).strip() for k, v in r.items() if k and k.strip().lower() in names and v), "")
-
-    def ts(s: str, zone: str) -> datetime:
-        s = s.strip()
-        for fmt in ("%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%dT%H:%MZ", "%Y-%m-%d %H:%M", "%Y-%m-%dT%H:%M:%S", "%d.%m.%Y %H:%M", "%d.%m.%Y %H:%M:%S"):
+    # Column names change between runs (svc/system, status/outcome, zone/tz): columns are recognised by their values.
+    def parse(s: str) -> datetime | None:
+        s = str(s or "").strip()
+        for fmt in ("%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%dT%H:%MZ", "%Y-%m-%d %H:%M", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M",
+                    "%d.%m.%Y %H:%M", "%d.%m.%Y %H:%M:%S", "%Y-%m-%d %H:%M:%S"):
             try:
-                d = datetime.strptime(s, fmt)
-                break
+                return datetime.strptime(s, fmt)
             except ValueError:
                 continue
-        else:
-            d = datetime.fromisoformat(s.replace("Z", "+00:00")).replace(tzinfo=None)
+        return None
+
+    def ts(s: str, zone: str) -> datetime:
+        d = parse(s)
         z = zone.upper()
-        off = 0 if (s.endswith("Z") or z in ("", "UTC", "Z", "GMT")) else 2 if "CEST" in z else local_offset_h
+        off = 0 if (str(s).strip().endswith("Z") or z in ("", "UTC", "Z", "GMT")) else 2 if "CEST" in z else local_offset_h
         return (d - timedelta(hours=off)).replace(tzinfo=timezone.utc)
 
-    busy = []
+    want = service.strip().lower()
+    busy, seen = [], set()
     for r in rows:
-        if col(r, "svc", "service").lower() != service.strip().lower() or "cancel" in col(r, "status").lower():
+        vals = [str(v or "").strip() for v in r.values()]
+        seen.update(v for v in vals if v and not parse(v))
+        if want not in (v.lower() for v in vals) or any("cancel" in v.lower() for v in vals):
             continue
-        zone = col(r, "zone", "tz", "timezone")
-        busy.append((ts(col(r, "start", "from", "begin"), zone), ts(col(r, "until", "end", "to"), zone), col(r, "cal_id", "id")))
+        times = [v for v in vals if parse(v)]
+        if len(times) < 2:
+            continue
+        zone = next((v for v in vals if v.upper() in ("UTC", "GMT", "Z", "CET", "CEST", "MEZ", "MESZ", "LOCAL")), "")
+        a, b = ts(times[0], zone), ts(times[1], zone)
+        busy.append((min(a, b), max(a, b), vals[0]))
+    if not busy and want not in (v.lower() for v in seen):
+        raise ValueError(f"service {service!r} does not occur in the calendar; check the token's own service name")
     n = ts(now, "UTC")
     t = n.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
     dur, gap, pushed = timedelta(minutes=duration_min), timedelta(minutes=gap_min), []

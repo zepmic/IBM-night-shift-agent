@@ -293,5 +293,19 @@ CF-017,spaces,freeze,2026-11-14T10:00:00Z,2026-11-14T16:00:00Z,UTC,cancelled,x
 """)))
 assert earliest_slot(_cal, "spaces", "2026-11-14T07:30:00Z")[0] == "2026-11-14T10:00:00Z"
 assert earliest_slot(_cal, "ci-runner", "2026-11-14T07:30:00Z") == ("2026-11-14T12:00:00Z", ["CF-013"])
+_cal.append({"cal_id": "CF-008", "svc": "vault", "start": "2026-11-15T17:00:00Z", "until": "2026-11-15T21:00:00Z", "zone": "UTC", "status": "active"})
 assert earliest_slot(_cal, "vault", "2026-11-14T07:30:00Z")[0] == "2026-11-14T08:00:00Z"
 print("earliest_slot ok")
+# run_pokjcyFo2us0: same calendar with renamed columns (entry_id,system,...,tz,outcome) -> must give the same slots
+_cal2 = list(_csv.DictReader(_io.StringIO("""entry_id,system,kind,start,until,tz,outcome,note
+CF-014,spaces,freeze,14.11.2026 06:00,14.11.2026 10:00,CET,active,audit window
+CF-013,ci-runner,freeze,2026-11-14T07:00:00Z,2026-11-14T10:40:00Z,UTC,active,release freeze
+CF-017,spaces,freeze,2026-11-14T10:00:00Z,2026-11-14T16:00:00Z,UTC,cancelled,x
+""")))
+assert earliest_slot(_cal2, "spaces", "2026-11-14T07:30:00Z") == ("2026-11-14T10:00:00Z", ["CF-014"])
+assert earliest_slot(_cal2, "ci-runner", "2026-11-14T07:30:00Z") == ("2026-11-14T12:00:00Z", ["CF-013"])
+try:
+    earliest_slot(_cal2, "TOK-SPA-37", "2026-11-14T07:30:00Z"); raise AssertionError("unknown service must fail")
+except ValueError:
+    pass
+print("earliest_slot renamed columns ok")
