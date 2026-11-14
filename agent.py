@@ -520,7 +520,7 @@ def _solve(client: ArenaClient, run_id: str, task: Task, tool_specs: list[ToolSp
     paths = _existing_paths(client, run_id, task.task_id)
     if tree := local_tree(paths, "/"):
         messages[1]["content"] += "\n\n" + tree
-    pre = _preload(client, run_id, task.task_id, paths, lambda p: _ticket_vision(client, run_id, task.task_id, p, cfg, tracker))
+    pre = _preload(client, run_id, task.task_id, paths, lambda p, q=TICKET_VISION_Q: _ticket_vision(client, run_id, task.task_id, p, cfg, tracker, q))
     tickets = [x for x in pre if x[1] == "ticket"]
     # What the task authorises is decided once, from the instruction (and the open ticket only if the instruction
     # delegates to the ticket queue), before any evidence is read. Nothing read later can widen it.
@@ -852,14 +852,19 @@ TICKET_VISION_Q = ("This is a scanned ticket. First line of your answer: exactly
                    "shapes, file paths, ids and times exactly as printed).")
 
 
-def _ticket_vision(client: ArenaClient, run_id: str, task_id: str, path: str, cfg: Config, tracker: Any) -> str:
+RULE_IMAGE_Q = ("Transcribe ALL text in this image verbatim, line by line, including numbered rules, times, durations, "
+                "signatures, stamps and handwritten notes.")
+
+
+def _ticket_vision(client: ArenaClient, run_id: str, task_id: str, path: str, cfg: Config, tracker: Any,
+                   question: str = TICKET_VISION_Q) -> str:
     """Verbatim transcription of a ticket scanned as an image, cached by blob hash (the same scans recur across tasks)."""
     import hashlib
-    h = "ticket:" + hashlib.sha256(client.download_file(run_id, task_id, path)[0]).hexdigest()
+    h = question[:20] + ":" + hashlib.sha256(client.download_file(run_id, task_id, path)[0]).hexdigest()
     with _VISION_LOCK:
         hit = _VISION_CACHE.get(h)
     if hit is None:
-        hit = _view_image(client, run_id, task_id, {"path": path, "question": TICKET_VISION_Q}, cfg, tracker)
+        hit = _view_image(client, run_id, task_id, {"path": path, "question": question}, cfg, tracker)
         if not hit.startswith("ERROR"):
             with _VISION_LOCK:
                 _VISION_CACHE[h] = hit
@@ -898,6 +903,16 @@ def _preload(client: ArenaClient, run_id: str, task_id: str, paths: set[str] | N
         for p in dict.fromkeys(re.findall(r"/[\w./-]+\.md\b", rules)):
             if p in paths and p != "/AGENTS.md" and not p.startswith("/tickets/"):
                 out.append((p, "rule" if p.count("/") == 1 else "named", numbered(text_of(p))))
+        # A rule file may put tonight's rules on a photographed sheet (run_32SoTk4qmWz4 t35: the standing order with the
+        # rotation buffer and binding services was never read -> rotation in a freeze, 0). Images the root rule files
+        # name come transcribed with the task.
+        if vision:
+            named_text = rules + "".join(x[2] for x in out if x[1] == "rule")
+            for p in list(dict.fromkeys(re.findall(r"/[\w./-]+\.(?:jpe?g|png)\b", named_text, re.I)))[:2]:
+                if p in paths and not p.startswith(("/tickets/", "/artifacts/", "/inbox/", "/board/")):
+                    t = vision(p, RULE_IMAGE_Q)
+                    if not t.startswith("ERROR"):
+                        out.append((p, "named", numbered(t)))
         ticket_paths = sorted(x for x in paths if re.fullmatch(r"/tickets/[^/]+", x))
         images = [p for p in ticket_paths if re.search(r"\.(jpe?g|png|gif|webp)$", p, re.I)]
         for p in ticket_paths:
