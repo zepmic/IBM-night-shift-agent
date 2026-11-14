@@ -659,6 +659,30 @@ def _solve(client: ArenaClient, run_id: str, task: Task, tool_specs: list[ToolSp
             if ids:
                 computed.append((sorted(ids), []))
         trace({"event": "tool", "name": "leak_check", "args": {}, "output": expl, "local": True, "preloaded": True})
+    # Board triage is decided post by post in code (Jev); a question that only asks which posts are injected gets that
+    # list as its answer, each id cited by its board line (run_vgw01u5R4u-J t10: the model passed the list on, sources 4/14).
+    _bt = policy.authorised_text or task.instruction
+    if cfg.direct_submit and not computed and not policy.allowed and re.search(r"\bboard\b", _bt, re.I) \
+            and re.search(r"\bposts\b|message ids?\b|board triage", _bt, re.I) and re.search(r"inject|instruct|tell|ask", _bt, re.I) \
+            and not re.search(r"chronolog|earliest|\border\b", _bt, re.I):
+        try:
+            bt = _board_triage(client, run_id, task.task_id, {}, evidence, tracker)
+        except Exception as e:  # noqa: BLE001
+            bt = f"ERROR: {e}"
+        m_bt = re.search(r"^(/\S+): \d+ candidate posts checked one by one;[^\[\n]*(\[.*\])\s*$", bt.split("\n", 1)[0])
+        if m_bt:
+            messages[1]["content"] += "\n\n=== COMPUTED: board_triage (already called for you) ===\n" + bt
+            local_seen.add("board_triage{}")
+            local_out["board_triage{}"] = bt
+            try:
+                b_ids = json.loads(m_bt.group(2))
+            except ValueError:
+                b_ids = []
+            b_cites = [{"path": m_bt.group(1), "line": int(n)} for i, n in re.findall(r"^- (\S+) line (\d+)", bt, re.M) if i in b_ids]
+            if b_ids and len(b_cites) == len(b_ids):
+                evidence.must_cite = b_cites
+                computed.append((b_ids, b_cites))
+        trace({"event": "tool", "name": "board_triage", "args": {}, "output": bt, "local": True, "preloaded": True})
     # The fact sheet up front for incident questions: `incident_facts {}` was the model's first call in a third of all
     # tasks (run_QfHOqhRM75Om, run_vgw01u5R4u-J: 32 of 96), one full call each just to ask for it.
     _text = policy.authorised_text or task.instruction
