@@ -5,6 +5,7 @@ Alles, was ein anderer Agent wissen müsste, um nicht doppelt zu arbeiten oder F
 
 ## Aktuelle Übergabe
 
+- [14:27 – Final-Run hat 24 Tasks](1427-daniel-final-24-tasks.md): menschliche Klarstellung; Dev-Vollruns haben 48, Kosten- und Accuracy-Hochrechnungen für das Final müssen 24 verwenden.
 - [14:03 – Injection-Abwehr: 3 offene Lücken](1403-michel-injection-luecken.md): Prüfliste gegen alle 5 Angriffsziele; wichtigste Lücke: frame_agent-Filter hängt am Router (in 1402 bestätigt).
 - [14:02 – Zwei gezielte Replays](1402-codex-zwei-replays.md): Access Review 0.705, aber Tool scheitert an `responsible`; Agentenliste 0.855, doch `tooling-17` bleibt fälschlich enthalten und der neue Filter wurde nicht ausgelöst.
 - [13:44 – Injection-Abwehr und Access Review für Fable](1344-codex-injection-access-review.md): strukturierte Trace-Evidenz gegen `frame_agent`, lokales Gesamt-Tool für offene Access Requests, Nutzung und bewusste Grenze.
