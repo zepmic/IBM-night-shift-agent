@@ -783,3 +783,109 @@ def board_candidates(read: Callable[[str], bytes], paths: set[str], path: str | 
             units.append({"ids": ids, "lines": lines, "author": p["author"], "text": " ".join(text.split()),
                           "encoded": bool(p["decoded"]), "split": len(ids) > 1})
     return path, units
+
+
+def agent_activity(read: Callable[[str], bytes], paths: set[str], agent: str, opts: dict | None = None) -> str:
+    """What the gateway log (tier 1) says one agent did: every security-relevant event with its line, the routine
+    ones as counts. For checking an agent's own status report claim by claim."""
+    opts = opts or {}
+    off = float(opts.get("local_utc_offset_h") if opts.get("local_utc_offset_h") is not None else 1)
+    ev = load_events(read, paths, off)
+    mine = [e for e in ev if e["agent"] == agent]
+    to_me = [e for e in ev if e["target"] == agent and e["agent"] != agent]
+    if not mine and not to_me:
+        return f"ERROR: no event of or for {agent!r} in the gateway logs; check the agent id"
+    key_rx = re.compile(r"secret|delegat|grant|revoke|quarantine|release|declin|post_board|upload")
+    own = {"muggingface.example"}
+    L = [f"GATEWAY LOG (tier 1) for {agent}, all times UTC: {len(mine)} own events from {iso(mine[0]['ts']) if mine else '-'} to {iso(mine[-1]['ts']) if mine else '-'}."]
+    counts: dict[str, int] = {}
+    for e in mine:
+        counts[e["action"]] = counts.get(e["action"], 0) + 1
+    L.append("Own events by action: " + ", ".join(f"{a} x{n}" for a, n in sorted(counts.items(), key=lambda kv: -kv[1])))
+    def row(e: dict) -> str:
+        rec = e.get("records")
+        return (f"- {iso(e['ts'])} {e['agent']} {e['action']} {e['target']} status={e['status']}"
+                + (f" records={rec}" if rec else "") + (f" detail={e['detail'][:70]!r}" if e["detail"] else "") + f" trace={e['trace']} ({cite(e)})")
+    keyev = [e for e in mine if key_rx.search(e["action"]) or key_rx.search(e["status"])]
+    L.append(f"Its secret reads, delegations, permission changes, board posts, declines ({len(keyev)}; none listed = none in the log):")
+    L += [row(e) for e in keyev[:40]]
+    ext = [e for e in mine if re.search(r"http_post|send_email|upload|transfer", e["action"])
+           and "." in domain_of(e["target"]) and not any(domain_of(e["target"]).endswith(o) for o in own)]
+    L.append(f"Its transfers / messages to destinations outside our domain ({len(ext)}):")
+    L += [row(e) for e in ext[:25]]
+    L.append(f"Events of OTHER agents or humans that target {agent} (delegations to it, quarantine, grants) ({len(to_me)}):")
+    L += [row(e) for e in to_me[:25]]
+    firsts = {}
+    for e in mine:
+        firsts.setdefault(e["action"], e)
+    L.append("First event per action: " + "; ".join(f"{a} {iso(e['ts'])} (line {e['line']})" for a, e in firsts.items()))
+    L.append("A claim is contradicted only if these tier-1 events show the opposite; cite the lines that contradict it.")
+    return "\n".join(L)
+
+
+# --- MCP / integration manifests ------------------------------------------------------------------------------
+def manifest_audit(read: Callable[[str], bytes], paths: set[str], directory: str | None = None) -> dict:
+    """Server manifests (.json) of one directory against its approval list (a csv with a sha256 column): the hash of
+    each manifest exactly as served vs. the newest approved hash of that server, and every description string with
+    its encoded parts decoded (for the 'instructions aimed at agents' rule, judged by the caller)."""
+    import hashlib
+
+    dirs: dict[str, list[str]] = {}
+    for p in paths:
+        if p.lower().endswith(".json"):
+            dirs.setdefault(p.rsplit("/", 1)[0], []).append(p)
+    d = directory.rstrip("/") if directory and directory.rstrip("/") in dirs else None
+    if d is None:
+        cand = [k for k, v in dirs.items() if len(v) >= 3 and (re.search(r"mcp|integration|server|plugin|connector", k.lower())
+                or any(q.rsplit("/", 1)[0] == k and q.lower().endswith(".csv") for q in paths))]
+        d = next((k for k in sorted(cand) if re.search(r"mcp|integration|server|plugin|connector", k.lower())), cand[0] if cand else None)
+    if d is None:
+        return {"dir": "", "servers": []}
+    approved: dict[str, tuple[str, str]] = {}  # server -> (approved_at, sha256) of the newest row
+    listed: set[str] = set()
+    csv_path = ""
+    for q in sorted(paths):
+        if q.rsplit("/", 1)[0] == d and q.lower().endswith(".csv"):
+            rows = list(csv.reader(io.StringIO(read(q).decode("utf-8-sig", "replace"))))
+            if len(rows) < 2:
+                continue
+            body = rows[1:]
+            hcol = next((i for i in range(len(rows[0])) if all(re.fullmatch(r"[0-9a-fA-F]{64}", r[i].strip()) for r in body if i < len(r))), None)
+            if hcol is None:
+                continue
+            csv_path = q
+            tcol = next((i for i in range(len(rows[0])) if all(parse_ts(r[i]) for r in body if i < len(r))), None)
+            for r in body:
+                name, at = r[0].strip(), (iso(parse_ts(r[tcol])) if tcol is not None else "")
+                listed.add(name)
+                if name not in approved or at >= approved[name][0]:
+                    approved[name] = (at, r[hcol].strip().lower())
+    servers = []
+    for p in sorted(dirs[d]):
+        data = read(p)
+        try:
+            o = json.loads(data.decode("utf-8-sig"))
+        except Exception:  # noqa: BLE001
+            o = {}
+        name = str(o.get("name") or p.rsplit("/", 1)[1][:-5]) if isinstance(o, dict) else p.rsplit("/", 1)[1][:-5]
+        descs: list[str] = []
+
+        def walk(x: Any) -> None:
+            if isinstance(x, dict):
+                for k, v in x.items():
+                    if isinstance(v, str) and re.search(r"desc|summary|note|help|title|instruction", k, re.I):
+                        descs.append(v)
+                    else:
+                        walk(v)
+            elif isinstance(x, list):
+                for v in x:
+                    walk(v)
+
+        walk(o)
+        sha = hashlib.sha256(data).hexdigest()
+        key = name if name in approved else p.rsplit("/", 1)[1][:-5]
+        want = approved.get(key, ("", ""))[1]
+        servers.append({"name": name, "path": p, "sha256": sha, "approved": want, "listed": key in listed or not csv_path,
+                        "hash_ok": (bool(want) and sha == want) or not csv_path,  # no approval list here: no hash rule
+                        "descriptions": [" ".join(decode_layers(t).split()) for t in dict.fromkeys(descs)]})
+    return {"dir": d, "csv": csv_path, "servers": servers}
