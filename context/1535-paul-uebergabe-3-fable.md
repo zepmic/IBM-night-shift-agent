@@ -120,10 +120,6 @@ Commit auf main, `git archive -o submission.tar.gz HEAD`, `POST /api/v1/submissi
 - Kleine, getestete Schritte schnell mergen und pushen, statt einen großen Umbau am Ende.
 - Harte Grenze: spätestens 16:40 den besten bestätigten Stand als finale Abgabe vorbereiten und das Team zum Bestätigen holen.
 
-## Zeitplan (nur ~40 Minuten)
-- 16:00–16:05: pullen, .env, diese Notiz + agent.py `_solve` überfliegen. Kein langes Einlesen.
-- 16:05–16:15: Hebel 1 (berechnete Antworten direkt abgeben) bauen, Tests, mergen, vollen Run im Hintergrund starten.
-- 16:15–16:25: währenddessen Hebel 2 (Owner/E-Mail ins Faktenblatt) bauen und testen; nach Run 1 mergen, Run 2 starten.
-- 16:25–16:35: Run-Ergebnisse gegen 2a6d810 (0.938 / $0.32 / 0.643) vergleichen; was schlechter ist, zurücknehmen.
-- 16:35–16:40: besten bestätigten Stand als finale Abgabe vorbereiten, Team zum Bestätigen holen. Danach nichts mehr ändern.
-- Wenn bis 16:30 kein Run besser ist: 2a6d810 (oder neuer main ohne Verhaltensänderung) abgeben.
+## Tempo (nur ~40 Minuten)
+Kein Plan, sofort loslegen: den größten Kostenhebel bauen, testen, mergen, Run im Hintergrund, sofort den nächsten Hebel.
+Nur eine harte Grenze: um 16:40 den besten bestätigten Stand (mindestens 2a6d810) als finale Abgabe vorbereiten.
