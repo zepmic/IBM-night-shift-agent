@@ -87,3 +87,21 @@ Format example (ignored: it sits in a code block). Write your entries below it, 
 - why: Mensch genehmigt maximal $1.50 für gestufte Tests mit Zwischenbilanz und danach den Merge aller Daniel-Änderungen auf main samt gemeinsam zugänglichem Kontext. Code unverändert gemessen; bekannte Routerfehler werden transparent mit übergeben.
 - rejected: alle 48 Tasks sofort ausführen (Kostenrisiko); Rohtraces und Dev-Erwartungen committen (bleiben gemäß Team-Regeln lokal, Plattform-Runs sind über IDs zugänglich)
 - evidence: run_LRi9gMHcHVDj: 3 Tasks, 0.9667; run_FRmvzRTmlI2k: 24 Tasks, 0.339125, spätere Tasks budgetbedingt verkürzt. 27/27 constraints_ok, konservativ $0.6671 verbraucht. Router blockiert erlaubte Rotation und Ticket-Draft; zweite Hälfte nicht gestartet. Merge ohne Konflikte, tests/test_offline.py und tests/test_guard.py grün; Details context/1220-daniel-codex-stufen-eval.md.
+
+## 12:35 · Router: Objekt-Einträge auflösen, bei unlesbarer Ausgabe einmal nachfragen
+- decided_by: both
+- why: run_FRmvzRTmlI2k t32 – Router schrieb `[{"op":"write",...}]`, `parse_route` machte daraus still „keine Aktion“, Guard blockte den erlaubten Draft → 0. t07 – „Rotate … at the earliest allowed time“ wurde nicht als Aktion erkannt. Jetzt: `{op|tool|name|action}`-Objekte und `containment.rotate` werden auf Toolnamen abgebildet; fordert der Router etwas, das sich nicht zuordnen lässt, gilt das als ungültig und es gibt genau einen Korrektur-Call. Prompt nennt Verben → Tool (rotate/quarantine/block → containment, send/notify → send_message, draft/write → write) und stellt klar, dass ein Imperativ auch dann ein Auftrag ist, wenn die Aufgabe eine Alternative fürs Nicht-Ausführen nennt.
+- rejected: Guard bei Router-Unsicherheit öffnen (dann wäre die Sperre gegen Injections weg), Regex auf die Instruktion (Final ist anders formuliert)
+- evidence: run_FRmvzRTmlI2k → run_saMKXsdQk67S (gleicher Seed): t32 0 → 1.00, t39 0 → 0.70; tests/test_guard.py um die beobachteten Formate ergänzt.
+
+## 12:45 · earliest_slot: Rotationszeitpunkt in Code statt im Kopf des Modells
+- decided_by: ai
+- why: Die Runbook-Regel (volle Stunde, nicht vor der nächsten vollen Stunde nach „now“, 60 min Abstand zu jedem Freeze/Job nur des eigenen Service, cancelled zählt nicht, Lokalzeit CET) ist reine Arithmetik; das Modell lag in t07 und t22 je eine Stunde daneben. Lokales Tool `earliest_slot(path, service, now, duration_min, gap_min, local_utc_offset_h)`; Dauer/Abstand übergibt das Modell aus dem Runbook. Spalten werden am Inhalt erkannt, weil sich die Spaltennamen pro Run ändern (svc/system, status/outcome, zone/tz) – die erste Version suchte nach Namen, fand in run_pokjcyFo2us0 nichts und lieferte 08:00 → 3 Regelverstöße. Unbekannter Service wirft jetzt einen Fehler statt eines freien Slots.
+- rejected: Spaltennamen raten/erweitern (bricht beim nächsten Umbenennen), Rotationsregel im Prompt genauer erklären (hat das Modell schon falsch umgesetzt)
+- evidence: run_saMKXsdQk67S t07 0 (11:00 statt 10:00) → run_4ccDI7WAFoLa t07 0.85, t22 0 → 0.70; Offline gegen die echten Kalender beider Runs: spaces 10:00, ci-runner 12:00 (= erwartet).
+
+## 12:45 · Einmaliger Hinweis bei Fließtext auf JSON-Aufgaben
+- decided_by: ai
+- why: t21/t22 gaben die Aktionen richtig aus, antworteten aber mit Prosa statt des verlangten JSON-Objekts. Verlangt der autorisierte Text JSON und kommt ein String, geht die Abgabe einmal zurück ans Modell; die Antwort ist vorher als `pending` gespeichert, damit der Fallback sie nicht verliert.
+- rejected: Prosa automatisch in JSON umbauen (Form ist aufgabenspezifisch)
+- evidence: run_4ccDI7WAFoLa t22 Answer ✓ (vorher partial). Test in tests/test_guard.py angepasst (Fallback-Defang-Test nutzt jetzt eine Prosa-Aufgabe).
