@@ -18,7 +18,7 @@
 | run_32SoTk4qmWz4 | 81afee1 Zählregel | 0.863 | $0.40 | 0.579 |
 | run_GXlstedXsIFN | 2866807 Zitate/Vision | 0.897 | $0.43 | 0.598 |
 | run_Sb-7mLdXYUMt | 520e231 Standing Order, Trifecta, domain_contacts | 0.917 | $0.46 | 0.607 |
-| run 10 (läuft beim Schreiben) | 4291eae | – | – | – |
+| run_SwvVSImU9uaS | 4291eae | ungültig: Plattform gab ab ~15:38 500er bei Submit/Manifest | – | – |
 
 Seeds streuen stark (±0.03); ein einzelner Run ist kein Beweis. cost_score liegt bei ~0.33 und hat sich nicht bewegt.
 
@@ -36,8 +36,17 @@ Seeds streuen stark (±0.03); ein einzelner Run ist kein Beweis. cost_score lieg
 - **Zitate**: fehlender `sheet` bei .ods/.xlsx-Zeilen wird ergänzt; Kanarien-IDs, MCP-Manifeste, Patient Zero aus der Rechnung.
 - Kosten: `keep_small_chars` 4000, `keep_full_outputs` 2; wiederholte lokale Aufrufe mit evtl. gekürzter Ausgabe bekommen sie neu.
 
+## Nachtrag 15:45
+- Neu auf main seit dem ersten Stand dieser Notiz: Leak-Check liest auch Board-Posts und „ID=Wert“ (offline 12/12 exakt inkl.
+  Quellen über 5 Seeds); Reihenfolge-Labels mit Ereignistext werden in Code dem passenden Zeitleisten-Eintrag zugeordnet
+  (Unit-Test t40). Beides ist **noch nicht in einem echten Run bestätigt**: als Erstes einen vollen Dev-Run auf main fahren.
+- Die Plattform lieferte ab ~15:38 HTTP 500 (Submit, Manifest, /submissions). Wenn ein Run viele „fallback submit failed … 500“
+  zeigt, ist er nicht aussagekräftig.
+- Demo-Abgaben: um 15:10 waren 0/3 genutzt; eine vorbereitete Abgabe (938b1f8, `prep_zNDXfhOfG9tL`, gültig bis 15:50) wartete
+  auf Bestätigung im Dashboard. Vor dem Final den aktuellen main neu vorbereiten (neuer prep ersetzt den alten).
+
 ## Offen, nach Nutzen
-1. **Ereignis-Reihenfolge** (je Run 1–3 Tasks bei 0.3–0.45): `incident.order_events` ordnet nur Ereignisse, die in der
+1. **Ereignis-Reihenfolge** (Zuordnung jetzt in Code, s. Nachtrag; Rest:) (je Run 1–3 Tasks bei 0.3–0.45): `incident.order_events` ordnet nur Ereignisse, die in der
    Zeitleiste stehen. Es fehlen u. a. SIEM-Alarm (`/security/siem_alerts.xlsx`), Board-Post des Angreifers, Quarantäne-Zeitpunkte
    aus dem Gateway-Log, Delegations-Widerruf. Diese als Zeitleisten-Einträge ergänzen (Zitat: Blatt+Zeile bzw. Log-Zeile).
 2. **Kosten** (cost_score 0.33): Grundlast ~6k Tokens pro Call (Systemprompt 3.3k Zeichen + vorgeladene Regeldateien + Baum).
