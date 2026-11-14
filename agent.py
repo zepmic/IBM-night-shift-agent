@@ -642,11 +642,18 @@ def _solve(client: ArenaClient, run_id: str, task: Task, tool_specs: list[ToolSp
                     trace({"event": "guard", "submit": notes})
                 if outcome == "UNSUPPORTED":
                     answer = None  # Task API: the outcome alone counts
+                comp = getattr(evidence, "computed_list", None)
+                if outcome == "OK" and comp and isinstance(answer, list) and all(isinstance(x, str) for x in answer) \
+                        and set(answer) > set(comp):
+                    trace({"event": "guard", "submit": [f"answer adds {sorted(set(answer) - set(comp))} to the computed list: dropped"]})
+                    answer = sorted(comp)
                 sources = clean_sources(args.get("sources"))
                 if cfg.auto_sources:
                     sources, report = srcs.finalize(sources, answer, evidence, _existing_paths(client, run_id, task.task_id),
                                                     cfg.max_auto_sources)
                     trace({"event": "sources", **report})
+                if outcome == "OK" and comp and isinstance(answer, list) and set(answer) == set(comp):
+                    sources = list(evidence.computed_cites)  # the answer is the computed list: cite what it rests on
                 if outcome == "OK" and getattr(evidence, "must_cite", None):
                     sources = list(evidence.must_cite)  # a computed answer: its sources are what the computation used
                     trace({"event": "sources", "computed": sources})
@@ -1304,6 +1311,11 @@ def _capabilities(client: ArenaClient, run_id: str, task_id: str, args: dict, cf
         return (f"shortest delegation chain from {args['chain_from']} to an agent holding {args['chain_to']}: {json.dumps(chain)}"
                 + (" (none: answer [])" if not chain else "") + (f"\n{note}\ncite {path} (path only) and the change-log / log lines above" if note else ""))
     need = args.get("require") or ["private_data", "untrusted_input", "outbound"]
+    if evidence is not None and not args.get("what_if"):
+        # the list is computed: what it rests on is cited (run_32SoTk4qmWz4 t20/t33: sources 0/5), and an answer that
+        # adds agents to it was steered by planted text (t05: injected_action, 0)
+        evidence.computed_cites = [{"path": path}] + (_cites(note) if note else [])
+        evidence.computed_list = list(hits)
     lines = [f"agents with all of {need} ({len(hits)}): {json.dumps(hits)}", "effective classes per agent:"]
     lines += [f"{a}: {', '.join(c)}" for a, c in sorted(eff.items())]
     key = {"add_delegation": ("add_delegations", "from", "to"), "remove_delegation": ("remove_delegations", "from", "to"),
