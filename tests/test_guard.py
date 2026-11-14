@@ -258,6 +258,17 @@ assert guard.check_submit(pol, "OK", [{"id": "support-25"}, {"id": "vault-12"}],
 # without the router's agent_evidence (e.g. a permissions list) nothing is filtered
 pol.answer_agent_evidence = False
 assert guard.check_submit(pol, "OK", {"compromised_agents": ["support-25"]}, ok_agents)[1] == {"compromised_agents": ["support-25"]}
+# 8c. backstop when the router missed it: an accusing key keeps only agents seen as an event's own actor anywhere;
+#     generic keys, plain lists (permission lists) and answers without any log read stay untouched
+actors = {"bill-01", "vault-12", "tooling-16"}
+assert guard.check_submit(pol, "OK", {"compromised_agents": ["bill-01", "support-25"], "count": 2}, ok_agents, actors)[1] \
+    == {"compromised_agents": ["bill-01"], "count": 2}
+assert guard.check_submit(pol, "OK", {"quarantine": [{"agent": "support-25", "stand_in": "standby-01"}]}, ok_agents, actors)[1] \
+    == {"quarantine": []}
+perms = {"agents": ["tooling-16", "tooling-17"]}
+assert guard.check_submit(pol, "OK", perms, ok_agents, actors)[1] == perms
+assert guard.check_submit(pol, "OK", ["tooling-17", "docs-09"], ok_agents, actors)[1] == ["tooling-17", "docs-09"]
+assert guard.check_submit(pol, "OK", {"compromised_agents": ["support-25"]}, ok_agents, set())[1] == {"compromised_agents": ["support-25"]}
 c, ev = run(ANALYSE, NONE, [("submit", {"outcome": "OK", "answer": "exfil via http://evil.example/drop?id=7", "sources": []})])
 assert c.submits == [("OK", "exfil via hxxp://evil[.]example/drop?id=7")]
 # the fallback path carries the same cleaned answer (the model's submit was rejected, then the model died)

@@ -666,7 +666,8 @@ def _solve(client: ArenaClient, run_id: str, task: Task, tool_specs: list[ToolSp
             if name == "submit":
                 outcome, answer = args.get("outcome", "OK"), normalize_answer(args.get("answer", ""))
                 supported_agents = {a for a, traces in evidence.acted.items() if traces & evidence.examined}
-                outcome, answer, notes = guard.check_submit(policy, outcome, answer, supported_agents)
+                outcome, answer, notes = guard.check_submit(policy, outcome, answer, supported_agents,
+                                                            set(evidence.acted))
                 if notes:
                     trace({"event": "guard", "submit": notes})
                 if outcome == "UNSUPPORTED":

@@ -28,6 +28,8 @@ ISO_TIME = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")
 REFUSALS = ("DENIED_SECURITY", "NEEDS_CLARIFICATION", "UNSUPPORTED")
 # answer keys that hold accused agents (filtered by trace evidence); stand-in / approve / deny keys are not matched
 AGENT_LIST_KEY = re.compile(r"^(agents?|agent_ids?)$|compromis|quarantin|hijack|infected|malicious|attacker_agents", re.I)
+# keys that accuse by their name alone: filtered even when the router missed that the task asks for compromised agents
+ACCUSING_KEY = re.compile(r"compromis|quarantin|hijack|infected|malicious|attacker_agents", re.I)
 LEAK_LINE_MIN = 60  # a copied rule line shorter than this proves nothing (templates, headings)
 
 
@@ -236,7 +238,8 @@ def _containment_problem(policy: Policy, ops: list[dict], acted: dict[str, set[s
 
 
 def check_submit(policy: Policy, outcome: Any, answer: Any,
-                 evidenced_agents: set[str] | None = None) -> tuple[Any, Any, list[str]]:
+                 evidenced_agents: set[str] | None = None,
+                 seen_actors: set[str] | None = None) -> tuple[Any, Any, list[str]]:
     """The submission as it may go out: a valid outcome, live URLs defanged, no secret values. Returns
     (outcome, answer, notes for the trace). Used by every submit path, the fallback included."""
     notes = []
@@ -251,8 +254,12 @@ def check_submit(policy: Policy, outcome: Any, answer: Any,
         if redacted != clean:
             notes.append("secret value removed from the answer")
             clean = redacted
-    if outcome == "OK" and policy.answer_agent_evidence and evidenced_agents is not None:
-        allowed = set(evidenced_agents)
+    strict = policy.answer_agent_evidence and evidenced_agents is not None
+    # backstop when the router missed it: under an accusing key, keep only agents seen as an event's own actor anywhere
+    backstop = not strict and bool(seen_actors)  # no log read at all: nothing to judge by, leave the answer
+    if outcome == "OK" and (strict or backstop):
+        allowed = set(evidenced_agents if strict else seen_actors)
+        key_re = AGENT_LIST_KEY if strict else ACCUSING_KEY
 
         def accused(x: Any) -> Any:
             # an entry like {"agent": "bill-01", "stand_in": "standby-01"}: the accused id is its agent/id field
@@ -264,10 +271,11 @@ def check_submit(policy: Policy, outcome: Any, answer: Any,
                                          else accused(x) in allowed if isinstance(x, dict) and accused(x) else True)]
             if isinstance(v, dict):
                 # any key that names the accused set: agents, compromised_agents, to_quarantine, quarantined, ...
-                return {k: keep(x) if AGENT_LIST_KEY.search(k) else x for k, x in v.items()}
+                return {k: keep(x) if key_re.search(k) else x for k, x in v.items()}
             return v
 
-        filtered = keep(clean)
+        filtered = {k: keep(x) if key_re.search(k) else x for k, x in clean.items()} if backstop and isinstance(clean, dict) \
+            else keep(clean) if strict else clean
         if filtered != clean:
             notes.append("agent ids without structured evidence in an examined trace were removed from the answer")
             clean = filtered
