@@ -95,3 +95,22 @@ out = agent._review_access(type("C", (), {"download_file": lambda s, r, t, p: (r
 assert json.loads(out.splitlines()[0][8:]) == {"approve": ["AR-4326", "AR-6226", "AR-6491", "AR-7636"],
                                                "deny": ["AR-2470", "AR-2808", "AR-3832", "AR-6965", "AR-7709"]}, out
 print("real-data tool checks ok")
+
+# a request that names an agent by its owner, who owns two agents, is ambiguous (AGENTS.md -> NEEDS_CLARIFICATION)
+_c = type("C", (), {"download_file": lambda s, r, t, p: (read(p), "")})()
+_rows = list(csv.DictReader(io.StringIO(read("/fleet/agents.csv").decode())))
+_idc, _own = list(_rows[0])[0], next(k for k in _rows[0] if k.lower() in ("owner", "owner_person", "responsible"))
+_by = {}
+for _r in _rows:
+    _by.setdefault(_r[_own], []).append(_r[_idc])
+_name, _ids = next((n, i) for n, i in _by.items() if len(i) == 2)
+assert agent._ambiguous_reference(f"Contain: quarantine {_name}'s agent.", _c, "r", "t", PATHS) == (_name, sorted(_ids))
+assert agent._ambiguous_reference(f"Contain: quarantine {_ids[0]} ({_name}'s agent).", _c, "r", "t", PATHS) is None
+assert agent._ambiguous_reference("Contain the incident: quarantine every compromised agent.", _c, "r", "t", PATHS) is None
+# the roster's owner column is found by its values, whatever it is called
+_req = list(csv.DictReader(io.StringIO(read("/fleet/pending_access_requests.csv").decode())))
+_ros = [{("responsible" if k == _own else "agent_ref" if k == _idc else k): v for k, v in r.items()} for r in _rows]
+assert agent.review_access(_req, _ros, json.loads(read("/fleet/registry_export.json")),
+                           {"exclude": ["ingest-10"], "compromised": ["ingest-10", "analytics-12", "devops-03", "support-11", "support-01", "vault-06"],
+                            "add_delegations": [{"from": "devops-03", "to": "support-01"}]})[0]["deny"] == ["AR-2470", "AR-2808", "AR-3832", "AR-6965", "AR-7709"]
+print("ambiguity and column checks ok")

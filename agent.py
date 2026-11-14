@@ -495,7 +495,12 @@ def _solve(client: ArenaClient, run_id: str, task: Task, tool_specs: list[ToolSp
         messages[1]["content"] += f"\n\n=== {labels[kind]} {path} ===\n{text}"
         evidence.add_tool("read", {"path": path}, {"text": text})
         in_context.add("read" + json.dumps({"path": path}, sort_keys=True))
-    trace({"event": "start", "task": task.task_id, "instruction": task.instruction, "model": cfg.model,
+    ambiguous = _ambiguous_reference(policy.authorised_text or "", client, run_id, task.task_id, paths) if policy.allowed else None
+    if ambiguous:
+        messages[1]["content"] += (f"\n\nNOTE (computed from the roster): the request refers to an agent as {ambiguous[0]!r}, which matches "
+                                   f"several agents: {json.dumps(ambiguous[1])}. The rules make such a request ambiguous: take no "
+                                   "action and submit NEEDS_CLARIFICATION with exactly these ids as a JSON array.")
+    trace({"event": "start", "task": task.task_id, "ambiguous": ambiguous, "instruction": task.instruction, "model": cfg.model,
            "allowed_actions": sorted(policy.allowed), "inbox": policy.inbox, "ticket": delegated,
            "route": "failed" if cfg.route and route is None else "ok"})
     nudges = 0
@@ -581,6 +586,13 @@ def _solve(client: ArenaClient, run_id: str, task: Task, tool_specs: list[ToolSp
                     sources, report = srcs.finalize(sources, answer, evidence, _existing_paths(client, run_id, task.task_id),
                                                     cfg.max_auto_sources)
                     trace({"event": "sources", **report})
+                if outcome == "OK" and len(sources) < 2 and getattr(evidence, "facts", None):
+                    done = [o.get("agent") for n_, a_ in policy.executed if n_ == "containment" for o in a_.get("ops") or []
+                            if isinstance(o, dict) and "quarantine" in str(o.get("op"))]
+                    extra = [evidence.facts[a] for a in done if a in evidence.facts]
+                    if extra:
+                        sources = extra  # what decided the quarantines: each agent's first action in an attack trace
+                        trace({"event": "sources", "containment": extra})
                 state["pending"] = {"outcome": outcome, "answer": answer, "sources": sources}
                 shape = None  # run__8OvzdDTetNJ t47: right outcome, answer "NEEDS_CLARIFICATION" instead of the ids -> 0
                 if outcome == "NEEDS_CLARIFICATION" and not (isinstance(answer, list) and answer and all(
@@ -671,6 +683,9 @@ def _solve(client: ArenaClient, run_id: str, task: Task, tool_specs: list[ToolSp
                 continue
             if name in mutating:
                 ok, reason, args = guard.check_action(policy, name, args, evidence.acted, evidence.examined)
+                if ok and ambiguous:
+                    ok, reason = False, (f"the request names an agent as {ambiguous[0]!r}, which matches {ambiguous[1]}: ambiguous. "
+                                         "Do nothing and submit NEEDS_CLARIFICATION with these ids as a JSON array.")
                 if ok and name == "containment":  # tier 1 says who is quarantined already (run__8OvzdDTetNJ t13: -> 0)
                     try:
                         done = _quarantined(client, run_id, task.task_id)
@@ -1160,14 +1175,32 @@ def review_access(requests: list[dict], roster: list[dict], export: dict, args: 
             raise ValueError(f"none of columns {names!r} found; available: {sorted(cols)}")
         return hit
 
-    rid = column(requests, "request_id", "id")
-    target = column(requests, "agent", "agent_id", "target")
-    filer = column(requests, "filed_by", "requested_by", "requester")
-    change = column(requests, "change", "action")
-    value = column(requests, "value", "scope", "delegate")
-    status = column(requests, "status", optional=True)
-    aid = column(roster, "agent_id", "agent", "id")
-    owner = column(roster, "owner_person", "owner", "human_owner")
+    # Column names change between runs (owner / owner_person / responsible ...): columns are found by their values.
+    def by_values(rows: list[dict], pred: Callable[[str], bool], skip: tuple = (), least: float = 0.6) -> str | None:
+        best, score = None, least
+        for k in (rows[0].keys() if rows else []):
+            vals = [str(r.get(k) or "").strip() for r in rows if str(r.get(k) or "").strip()]
+            sc = sum(map(pred, vals)) / len(vals) if vals else 0.0
+            if k not in skip and sc >= score and (best is None or sc > score):
+                best, score = k, sc
+        return best
+
+    kinds = ("add_delegation", "remove_delegation", "grant_scope", "revoke_scope")
+    aid = by_values(roster, lambda v: bool(incident.AGENT_RX.match(v)), least=0.9) or column(roster, "agent_id", "agent", "id")
+    ids = {str(r.get(aid) or "").strip() for r in roster}
+    rid = next(iter(requests[0].keys())) if requests else column(requests, "request_id", "id")
+    change = by_values(requests, lambda v: v in kinds) or column(requests, "change", "action")
+    target = by_values(requests, lambda v: v in ids, skip=(rid, change)) or column(requests, "agent", "agent_id", "target")
+    status = by_values(requests, lambda v: v.lower() in ("open", "pending", "withdrawn", "closed", "cancelled", "decided"), least=0.9) \
+        or column(requests, "status", optional=True)
+    filers = {str(r.get(k) or "").strip() for r in requests for k in r if k not in (rid, change, target, status)}
+    owner = by_values(roster, lambda v: v in filers and v not in ids, skip=(aid,), least=0.3) \
+        or column(roster, "owner_person", "owner", "human_owner", "responsible")
+    people = {str(r.get(owner) or "").strip() for r in roster}
+    filer = by_values(requests, lambda v: v in people or v in ids or v.startswith(("bot", "svc", "external")), skip=(rid, change, target, status), least=0.3) \
+        or column(requests, "filed_by", "requested_by", "requester")
+    value = by_values(requests, lambda v: bool(re.fullmatch(r"[a-z_]+:[a-z_*]+", v)) or v in ids, skip=(rid, change, target, status, filer), least=0.8) \
+        or column(requests, "value", "scope", "delegate")
     owners = {str(r.get(aid) or "").strip(): str(r.get(owner) or "").strip() for r in roster}
     base = {k: list(args.get(k) or []) for k in
             ("add_delegations", "remove_delegations", "grant_scopes", "revoke_scopes", "exclude")}
@@ -1282,6 +1315,39 @@ def _current_state(client: ArenaClient, run_id: str, task_id: str, args: dict, c
     return out, note
 
 
+def _ambiguous_reference(text: str, client: ArenaClient, run_id: str, task_id: str, paths: set[str] | None) -> tuple[str, list[str]] | None:
+    """(name, agent ids) when the authorised request refers to an agent by a person's or display name that several
+    roster rows share and names none of those agents by id (AGENTS.md: such a request needs clarification)."""
+    import csv
+    import io
+
+    for p in sorted(paths or ()):
+        if not re.search(r"agents?\.csv$|roster.*\.csv$", p.lower()):
+            continue
+        try:
+            rows = list(csv.DictReader(io.StringIO(client.download_file(run_id, task_id, p)[0].decode("utf-8-sig", "replace"))))
+        except Exception:  # noqa: BLE001
+            continue
+        if not rows:
+            continue
+        idc = next((k for k in rows[0] if sum(bool(incident.AGENT_RX.match(str(r.get(k) or "").strip())) for r in rows) > len(rows) * 0.9), None)
+        if not idc:
+            continue
+        groups: dict[str, list[str]] = {}
+        for r in rows:
+            for k, v in r.items():
+                v = str(v or "").strip()
+                if k != idc and len(v) >= 3 and not incident.AGENT_RX.match(v):
+                    groups.setdefault(v, []).append(str(r[idc]).strip())
+        for name, ids in groups.items():
+            if 2 <= len(set(ids)) <= 4 and not any(i in text for i in ids):
+                q = re.escape(name)
+                person = " " in name and re.search(rf"\b{q}\b", text)
+                if person or re.search(rf"\b{q}(['’]s)? (agent|bot|assistant)\b|\b(agent|bot|assistant) (named |called )?[\"'“]?{q}\b", text):
+                    return name, sorted(set(ids))
+    return None
+
+
 def _quarantined(client: ArenaClient, run_id: str, task_id: str) -> set[str]:
     paths = _existing_paths(client, run_id, task_id) or set()
     return incident.analyse(lambda p: client.download_file(run_id, task_id, p)[0], paths)["quarantined"]
@@ -1301,14 +1367,23 @@ def _incident_facts(client: ArenaClient, run_id: str, task_id: str, args: dict, 
         for e in facts["by_trace"][tr]:
             if incident.AGENT_RX.match(e["agent"]) and "declin" not in e["action"] and "declin" not in e["status"]:
                 evidence.acted.setdefault(e["agent"], set()).add(tr)
-    # every cited place goes into the evidence ledger, so the answer's ids can be cited from it
+    # every cited place goes into the evidence ledger with the locator its file type takes
+    reg = re.search(r"Transfers carrying records in (/\S+)", text)
     for line in text.splitlines():
         for m in re.finditer(r"(/[\w./-]+) line (\d+)", line):
-            evidence.add_tool("search", {}, {"hits": [{"path": m.group(1), "line": int(m.group(2)), "text": line}]})
-        m = re.match(r"- (\S+) \((?:sheet '([^']+)' row (\d+)|record \S+)\)", line)
-        if m and (reg := re.search(r"in (/\S+\.(?:csv|xlsx|ods))", text)):
+            evidence._add(m.group(1), line, line=int(m.group(2)))
+        for m in re.finditer(r"(/[\w./-]+) sheet '([^']+)' row (\d+)", line):
+            evidence._add(m.group(1), line, sheet=m.group(2), row=int(m.group(3)))
+        m = re.match(r"- (\S+) \((?:sheet '([^']+)' row (\d+)|record (\S+))\)", line)
+        if m and reg:
             if m.group(2):
                 evidence._add(reg.group(1), line, sheet=m.group(2), row=int(m.group(3)))
+            else:
+                evidence._add(reg.group(1), line, record=m.group(4))
+    cfg_facts = getattr(evidence, "facts", None)
+    if cfg_facts is None:
+        evidence.facts = cfg_facts = {}
+    cfg_facts.update({a: {"path": e["file"], "line": e["line"]} for a, e in facts.get("compromised", {}).items()})
     return text[:cfg.max_output_chars]
 
 

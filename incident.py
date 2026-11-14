@@ -452,13 +452,13 @@ def fact_sheet(read: Callable[[str], bytes], paths: set[str], opts: dict | None 
     if grants:
         L.append("Permission changes made in the logs (not in the change log): " + "; ".join(
             f"{e['agent']} {e['action']} {e['target']} {e['status']} at {iso(e['ts'])} ({cite(e)}{', attack trace' if e['trace'] in r['attack'] else ''})" for e in grants[:12]))
-    ups = [e for e in r["uploads"] if e["target"] in r["artifacts"] or e["agent"] in r["redteam_ids"] or e["agent"].replace("external:", "") in r["redteam_ids"]]
-    if ups:
-        L.append("Uploads of these artifacts / by the red team: " + "; ".join(
-            f"{e['agent']} uploaded {e['target']} at {iso(e['ts'])} ({cite(e)})" for e in ups[:10]))
     try:
-        L += transfer_lines(transfers(read, paths, opts))
-        L += other_times(read, paths, r)
+        t = transfers(read, paths, opts)
+        by_rq = {e.get("request"): e for e in r["events"] if e.get("request")}
+        for x in t.get("rows", []):
+            x["log"] = by_rq.get(x.get("request"))
+        L += transfer_lines(t)
+        L += timeline(read, paths, r, t)
     except Exception as e:  # noqa: BLE001 - the log facts above stand on their own
         L.append(f"(transfer register not analysed: {type(e).__name__}: {e})")
     return "\n".join(L)
@@ -562,7 +562,7 @@ def transfers(read: Callable[[str], bytes], paths: set[str], opts: dict | None =
         partner = any(d == q or d.endswith("." + q) or q.endswith("." + d) for q in partners)
         tk = g(c_ticket)
         covered = bool(tk) and tk in approved and partner
-        out.append({"id": r[0].strip(), "row": n, "ts": ts, "agent": g(c_agent), "dest": d, "records": g(c_rec), "ids": ids,
+        out.append({"id": r[0].strip(), "row": n, "request": next((v.strip() for v in r if re.match(r"rq[-_]", v.strip())), ""), "ts": ts, "agent": g(c_agent), "dest": d, "records": g(c_rec), "ids": ids,
                     "status": g(c_status).lower(), "ticket": tk, "internal": internal, "covered": covered,
                     "counts": not internal and not covered,
                     "why": "internal destination" if internal else f"covered by approved ticket {tk} to a verified partner" if covered
@@ -582,7 +582,7 @@ def transfer_lines(t: dict) -> list[str]:
     L = [f"Transfers carrying records in {t['path']} (cite by {'sheet + row' if t['sheet'] else 'record id'}; hidden rows included):"]
     for x in t["rows"]:
         L.append(f"- {x['id']} ({loc(x)}) {iso(x['ts'])} {x['agent']} -> {x['dest']} {x['records']} = {len(x['ids'])} records, "
-                 f"status {x['status']}: " + ("COUNTS as exfiltration (" + x["why"] + ")" if x["counts"] else "does not count (" + x["why"] + ")"))
+                 f"status {x['status']}" + (f", log {cite(x['log'])}" if x.get("log") else "") + ": " + ("COUNTS as exfiltration (" + x["why"] + ")" if x["counts"] else "does not count (" + x["why"] + ")"))
     cnt = [x for x in t["rows"] if x["counts"]]
     if cnt:
         ok = [x for x in cnt if x["status"] in ("ok", "success")]
@@ -595,6 +595,12 @@ def transfer_lines(t: dict) -> list[str]:
                  + "; successful only: " + json.dumps(sorted({x["dest"] for x in ok})))
         L.append(f"First counting transfer (blocked or successful): {cnt[0]['id']} at {iso(cnt[0]['ts'])}"
                  + (f"; first successful: {ok[0]['id']} at {iso(ok[0]['ts'])}" if ok else "; none successful"))
+        firsts: dict[str, dict] = {}
+        for x in ok:
+            firsts.setdefault(x["agent"], x)
+        if ok:
+            L.append("First SUCCESSFUL counting transfer per sending agent (a blocked transfer delivered nothing): " + "; ".join(
+                f"{a}: {x['id']} to {x['dest']} at {iso(x['ts'])}" for a, x in firsts.items()))
         if t["canaries"]:
             hit = sorted(t["canaries"] & set(allids))
             hit_ok = sorted(t["canaries"] & {i for x in ok for i in x["ids"]})
@@ -664,3 +670,64 @@ def current_changes(read: Callable[[str], bytes], paths: set[str], opts: dict | 
         out[key[0]].append(key[2])
         out["notes"].append(f"{iso(ts)} {change} {agent} {value} ({where})")
     return out
+
+
+def timeline(read: Callable[[str], bytes], paths: set[str], r: dict, t: dict) -> list[str]:
+    """One list of the dated facts that event-order questions ask about, sorted in code (UTC)."""
+    items: list[tuple[datetime, str]] = []
+    for e in r["uploads"]:
+        a = r["artifacts"].get(e["target"])
+        red = e["agent"] in r["redteam_ids"] or e["agent"].replace("external:", "") in r["redteam_ids"]
+        if a or red:
+            kind = "red-team canary artifact" if (red or (a and a["redteam"])) else "attack ENTRY artifact" if a["entry"] else "harmless quarantined artifact"
+            items.append((e["ts"], f"{kind} uploaded by {e['agent']}: {e['target']} ({cite(e)})"))
+    for loc, e in r["first_reads"].items():
+        a = r["artifacts"][loc]
+        if a["entry"]:
+            items.append((e["ts"], f"entry artifact {loc} first processed (read_artifact) by {e['agent']} ({cite(e)}; cite the copy {a['copy']} by path too)"))
+    seen_secret = False
+    board: dict[str, str] = {}
+    for p in sorted(paths):
+        if "board" in p.lower() and p.lower().endswith((".jsonl", ".json", ".csv", ".md")):
+            for n, line in enumerate(read(p).decode("utf-8", "replace").splitlines(), 1):
+                for mid in re.findall(r"\b[A-Z]{1,4}-\d{2,6}\b", line[:200]):
+                    board.setdefault(mid, f"{p} line {n}")
+    for e in r["acts"]:
+        if "post" in e["action"] and "board" in e["action"]:
+            items.append((e["ts"], f"injected notice {e['target']} posted on the board by {e['agent']} within the attack ({board.get(e['target'], cite(e))})"))
+        if "secret" in e["action"] and "declin" not in e["status"]:
+            items.append((e["ts"], f"{'secret read' if seen_secret else 'FIRST secret read'} within the attack: {e['target']} by {e['agent']} ({cite(e)})"))
+            seen_secret = True
+    for e in r["events"]:
+        if "quarantine" in e["action"] or "release" in e["action"]:
+            items.append((e["ts"], f"{e['target']} {e['action']} by {e['agent']} ({cite(e)})"))
+        elif re.fullmatch(r"(add|remove)_delegation|(grant|revoke)_scope", e["action"]):
+            items.append((e["ts"], f"{e['agent']} {e['action']} {e['target']} in the gateway log{' (attack trace)' if e['trace'] in r['attack'] else ''} ({cite(e)})"))
+    loc = (lambda x: f"sheet {t['sheet']!r} row {x['row']}") if t.get("sheet") else (lambda x: f"record {x['id']}")
+    first_ok = False
+    for x in t.get("rows", []):
+        where = f"{t['path']} {loc(x)}" + (f"; {cite(x['log'])}" if x.get("log") else "")
+        if x["covered"]:
+            items.append((x["ts"], f"approved transfer {x['id']} sent to verified partner {x['dest']} ({where})"))
+        elif x["counts"]:
+            tag = ""
+            if x["status"] in ("ok", "success") and not first_ok:
+                first_ok, tag = True, " = FIRST successful exfiltrating transfer"
+            items.append((x["ts"], f"exfiltrating transfer {x['id']} to {x['dest']} status {x['status']}{tag} ({where})"))
+    if r["changes_path"]:
+        for n, line in enumerate(read(r["changes_path"]).decode("utf-8-sig", "replace").splitlines(), 1):
+            c = [x.strip() for x in line.strip().strip("|").split("|")]
+            if line.strip().startswith("|") and parse_ts(c[0]):
+                items.append((parse_ts(c[0]), f"change log: {' '.join(c[1:4])}{' (' + c[6] + ')' if len(c) > 6 and c[6] else ''} took effect ({r['changes_path']} line {n})"))
+    keys = set(r["tokens"]) | set(r["compromised"]) | set(r["attacker_domains"])
+    for p in sorted(paths):
+        if re.search(r"siem|alert", p.lower()) and p.lower().endswith((".csv", ".xlsx", ".ods")):
+            sheet, header, rows = load_table(p, read(p))
+            for n, row in rows:
+                line = " | ".join(x.strip() for x in row if x.strip())
+                ts = next((parse_ts(x) for x in row if parse_ts(x)), None)
+                if ts and re.search(r"secret|token|exfil|egress|outbound|transfer|upload|artifact", line, re.I) and any(k in line for k in keys):
+                    items.append((ts, f"SIEM alert: {line[:100]} ({p} {'sheet ' + repr(sheet) + ' row ' + str(n) if sheet else 'line ' + str(n)})"))
+    items.sort(key=lambda i: i[0])
+    return ["TIMELINE, already sorted earliest first (UTC). For an order-of-events question map each event to its entry here "
+            "and keep THIS order:"] + [f"{k}. {iso(ts)} {txt}" for k, (ts, txt) in enumerate(items[:40], 1)]
