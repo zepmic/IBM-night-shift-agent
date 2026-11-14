@@ -288,3 +288,8 @@ Format example (ignored: it sits in a code block). Write your entries below it, 
 - why: Reihenfolge-Tasks lagen je Run 1–3× bei 0.3–0.45. run_GXlstedXsIFN t40: die Zeitleiste enthielt alle Ereignisse (SIEM-Alarm, Quarantäne), aber das Modell vergab die Einträge 1..5 der Reihe nach. Jetzt sollen Labels den Ereignistext tragen („A: moderation-18 was quarantined“); `order_events` vergleicht Wortstämme mit jedem Eintrag (Zitate ausgenommen), ordnet gierig eindeutig zu und überstimmt die Wahl des Modells nur, wenn ein anderer Eintrag klar besser passt. Reine Buchstaben bleiben wie angegeben.
 - rejected: Jev/Embedding pro Paar (zusätzliche Calls; Wortstämme reichen für die generierten Formulierungen)
 - evidence: Unit-Test mit der Zeitleiste von t40: blinde Zuordnung 1..5 → C D B E A = erwartet. Plattform gab beim Schreiben 500er, darum kein Offline-Lauf über mehrere Seeds.
+
+## 15:44 · Gekürzte lokale Ergebnisse nur einmal neu liefern
+- decided_by: ai
+- why: Rückschritt aus 15:09: run_Sb-7mLdXYUMt t25 (Access-Log-Policy) wiederholte denselben filter_rows-Aufruf sechsmal und bekam jedes Mal 102 Zeilen neu, $0.053 und Score 0.1 (teuerster Task des Runs). Jetzt höchstens ein erneutes Liefern pro Aufruf; danach greift wieder die Sperre mit dem `no_match`-Hinweis für den Abgleich mit der Ticket-Tabelle.
+- evidence: Tests grün; Bestätigung im nächsten vollen Run.
