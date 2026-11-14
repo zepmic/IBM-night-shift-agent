@@ -260,3 +260,8 @@ Format example (ignored: it sits in a code block). Write your entries below it, 
 - why: run_fbZepCGh4Nqy t36 verweist ausschließlich auf `/standing_order.jpg`; die getippte Markdown-Kopie ist ausdrücklich ungültig und ergab eine falsche Exfiltrationszahl
 - rejected: Markdown-Kopie verwenden (widerspricht Runbook), erwartete Antwort im Checker hartcodieren (nicht generalisierbar)
 - evidence: run_fbZepCGh4Nqy t36 2300 Records + 2 Domains → exakt 2007 Records + 1 Domain; t14 größter Sender nach Inhalts-Join exakt, $0 Run-Kosten
+## 15:21 · Vertragsfrist „in force right now“ in Code
+- decided_by: ai (Mensch: „neue Features, nicht nur Bugfixes“)
+- why: Vertragsfamilie lag bei 0.53–0.6 (run_Go_5ItDDXKIl t25/t37, run_32SoTk4qmWz4 t36): das Modell nahm ein Amendment, das erst in der Zukunft gilt oder nicht unterschrieben ist. `incident.agreement_terms` liest die Organisation aus der Aufgabe gegen die Accounts-Tabelle, die Grundklausel des Vertrags und jedes Amendment (md/docx/pdf als Text, Bilder per Vision): zählt nur, wenn es die Benachrichtigungsklausel ersetzt (nicht „unchanged“), für die Organisation unterschrieben ist und „effective from“ ≤ jetzt (aus AGENTS.md); das jüngste gewinnt. Ergebnis liegt der Aufgabe bei, Zitate (Accounts-Record, Vertragszeile, entscheidendes Amendment) setzt der Harness.
+- rejected: Modell per Prompt auf Gültigkeitsdatum hinweisen (verbatim-Vision allein reicht nicht für das Abwägen über 5 Amendments)
+- evidence: offline 3/3 exakt inkl. Quellen (t36 24 h, t25 72 h aus Bild mit Zeilenumbruch im Satz, t37 48 h); Unit-Test in tests/test_offline.py. Run 8 (2866807): 0.897 / $0.43 / final 0.598.

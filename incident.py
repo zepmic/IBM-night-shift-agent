@@ -1062,3 +1062,94 @@ def runbook_reading(read: Callable[[str], bytes], paths: set[str], t: dict,
         L.append("Exfiltrated records per sending agent under this reading (largest share first; cite that agent's transfers): " + "; ".join(
             f"{a}: {share[a]} records in {json.dumps([loc(x) for x in per[a]])}" for a in sorted(share, key=lambda a: -share[a])))
     return L
+
+
+# --- contracts: which breach-notification clause is in force -----------------------------------------------------
+def agreement_terms(read: Callable[[str], bytes], paths: set[str], text: str,
+                    vision: Callable[[str], str] | None = None) -> tuple[dict | None, list[dict], str]:
+    """For the organisation the text names (looked up in the accounts table): the breach-notification window in force
+    now. Base clause from the agreement, replaced by every amendment that is signed by both sides, replaces the
+    notification clause and is effective at or before now (the latest such wins). (answer, sources, explanation)."""
+    def txt(p: str) -> str:
+        try:
+            if p.lower().endswith((".png", ".jpg", ".jpeg")):
+                return vision(p) if vision else ""
+            return _extract_text(p, read(p))
+        except Exception:  # noqa: BLE001
+            return ""
+
+    agents_md = txt("/AGENTS.md") if "/AGENTS.md" in paths else ""
+    m = re.search(r"(?:now|current time)[^\n]*?(\d{4}-\d\d-\d\dT\d\d:\d\d(?::\d\d)?Z)", agents_md, re.I)
+    if not m:
+        return None, [], "no current time found in /AGENTS.md"
+    now = m.group(1)
+    acc = next((p for p in sorted(paths) if re.search(r"accounts?\.csv$", p.lower()) and "/docs/" in p.lower()), "") or \
+        next((p for p in sorted(paths) if re.search(r"(accounts|agreements|customers)\.csv$", p.lower())), "")
+    if not acc:
+        return None, [], "no accounts table"
+    rows = list(csv.DictReader(io.StringIO(txt(acc))))
+    low = " ".join(text.lower().split())
+    hit = None
+    for r in rows:
+        vals = [str(v or "").strip() for v in r.values()]
+        org = next((v for k, v in r.items() if k and re.search(r"organi[sz]ation|company|customer|partner|name", k, re.I)), "")
+        if org and org.lower() in low and (hit is None or len(org) > len(hit[1])):
+            hit = (r, org, vals)
+    if not hit:
+        return None, [], "no organisation of the accounts table named in the task"
+    r, org, vals = hit
+    agr = vals[0]
+    doc = next((v for v in vals if v.startswith("/") and v in paths), "")
+    if not doc:
+        return None, [], f"no agreement document for {org}"
+
+    def clause(t: str) -> tuple[int | None, str]:
+        for sent in re.split(r"(?<=[.\"”])\s+|\n\s*\n", t):  # a scan breaks sentences across lines
+            sent = " ".join(sent.split())
+            if re.search(r"notif", sent, re.I) and re.search(r"breach", sent, re.I):
+                h = re.search(r"within (\d+)\s*hours", sent, re.I)
+                if h:
+                    return int(h.group(1)), sent
+        return None, ""
+
+    def signer(t: str) -> str:
+        s_ = re.search(r"[Ss]igned[^\n]*?for " + re.escape(org) + r" by ([A-ZÀ-Ž][\w'’.-]+(?: [A-ZÀ-Ž][\w'’.-]+)+)", t)
+        return s_.group(1).strip(" .") if s_ else ""
+
+    base = txt(doc)
+    hours, _ = clause(base)
+    who = signer(base)
+    line3 = next((i for i, l in enumerate(base.splitlines(), 1) if agr in l), None)
+    best = None  # (effective, path, hours, signer)
+    notes = []
+    stem = doc.rsplit(".", 1)[0]
+    for p in sorted(x for x in paths if x.startswith(stem + "_amendment") or x.startswith(stem + "-amendment")):
+        t = txt(p)
+        if not t:
+            continue
+        h, sent = clause(t)
+        if h is None or re.search(r"\bunchanged\b", sent, re.I):
+            notes.append(f"{p}: does not replace the notification clause")
+            continue
+        if re.search(r"not signed|unsigned|draft|_{4,}", t, re.I) or not signer(t):
+            notes.append(f"{p}: not signed for {org}, not in force")
+            continue
+        e = re.search(r"[Ee]ffective (?:from|as of|on)?\s*(\d{4}-\d\d-\d\d(?:T\d\d:\d\d(?::\d\d)?Z)?)", t)
+        sd = re.search(r"[Ss]igned (\d{4}-\d\d-\d\d)", t)
+        eff = (e.group(1) if e else sd.group(1) if sd else "")
+        eff_cmp = eff if "T" in eff else eff + "T00:00:00Z"
+        if not eff or eff_cmp > now:
+            notes.append(f"{p}: {h} h, effective {eff or '?'} is after now ({now}), not in force yet")
+            continue
+        notes.append(f"{p}: {h} h, signed, effective {eff}: in force from then")
+        if best is None or eff_cmp >= best[0]:
+            best = (eff_cmp, p, h, signer(t))
+    if best:
+        hours, who = best[2], best[3] or who
+    if hours is None:
+        return None, [], f"no notification clause found in {doc}"
+    ans = {"agreement": agr, "notify_hours": hours, "signatory": who}
+    src = [{"path": acc, "record": agr}] + ([{"path": doc, "line": line3}] if line3 else [{"path": doc}]) + ([{"path": best[1]}] if best else [])
+    expl = (f"{org}: agreement {agr} ({doc}); base clause {clause(base)[0]} h; now {now}.\n" + "\n".join(notes)
+            + f"\nIN FORCE NOW: {json.dumps(ans)}" + (f" (from {best[1]})" if best else " (base clause)"))
+    return ans, src, expl
