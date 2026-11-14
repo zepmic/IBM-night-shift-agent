@@ -319,3 +319,13 @@ CF-012,support-desk,freeze,2026-11-14T22:00:00Z,2026-11-15T04:00:00Z,UTC,active,
 assert earliest_slot(_cal3, "ci-runner", "2026-11-14T07:30:00Z", gap_min=30)[0] == "2026-11-14T08:00:00Z"
 assert earliest_slot(_cal3, "ci-runner, billing; support-desk", "2026-11-14T07:30:00Z", gap_min=30)[0] == "2026-11-14T19:00:00Z"
 print("earliest_slot consumers ok")
+# capabilities: transitive delegation (run_hP6Aq5nhZhYl t37 logic), changes and exclusions
+from agent import capabilities as _caps
+_exp = {"scope_classes": {"p": "private_data", "u": "untrusted_input", "o": "outbound"},
+        "agents": [{"id": "a", "scopes": ["p"], "delegates_to": ["b"]}, {"id": "b", "scopes": ["u"], "delegates_to": ["c"]},
+                   {"id": "c", "scopes": ["o"], "delegates_to": []}, {"id": "d", "scopes": ["p", "u"], "delegates_to": []}]}
+assert _caps(_exp, {})[0] == ["a"]
+assert _caps(_exp, {"exclude": ["c"]})[0] == []
+assert _caps(_exp, {"grant_scopes": [{"agent": "d", "scope": "o"}]})[0] == ["a", "d"]
+assert _caps(_exp, {"remove_delegations": [{"from": "b", "to": "c"}], "add_delegations": [{"from": "d", "to": "c"}]})[0] == ["d"]
+print("capabilities ok")
