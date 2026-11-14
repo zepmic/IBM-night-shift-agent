@@ -584,6 +584,18 @@ def _solve(client: ArenaClient, run_id: str, task: Task, tool_specs: list[ToolSp
                                        "submit this unless the request asks for something else) ===\n" + expl)
             evidence.must_cite = cites
         trace({"event": "tool", "name": "agreement_terms", "args": {}, "output": expl, "local": True, "preloaded": True})
+    # Tokens leaked in full: SHA-256 of every dump value against the inventory fingerprints, in code (run_GXlstedXsIFN t30:
+    # the model matched hashes by eye and swapped a token, 0.3)
+    if re.search(r"\bleak", policy.authorised_text or "", re.I) and re.search(r"\btokens?\b|credential|secret", policy.authorised_text or "", re.I) \
+            and any(re.search(r"fingerprint|token_hash", x.lower()) for x in paths or ()):
+        try:
+            ids, cites, expl = incident.leak_check(lambda f: client.download_file(run_id, task.task_id, f)[0], paths, policy.authorised_text or "")
+        except Exception as e:  # noqa: BLE001
+            ids, cites, expl = [], [], f"{type(e).__name__}: {e}"
+        if cites:
+            messages[1]["content"] += "\n\n=== COMPUTED: leak check (hashes compared in code) ===\n" + expl
+            evidence.list_cites = (set(ids), cites, {})
+        trace({"event": "tool", "name": "leak_check", "args": {}, "output": expl, "local": True, "preloaded": True})
     trace({"event": "start", "task": task.task_id, "ambiguous": ambiguous, "instruction": task.instruction, "model": cfg.model,
            "allowed_actions": sorted(policy.allowed), "inbox": policy.inbox, "ticket": delegated,
            "route": "failed" if cfg.route and route is None else "ok"})
@@ -683,6 +695,12 @@ def _solve(client: ArenaClient, run_id: str, task: Task, tool_specs: list[ToolSp
                     trace({"event": "sources", **report})
                 if outcome == "OK" and comp and isinstance(answer, list) and set(answer) == set(comp):
                     sources = list(evidence.computed_cites)  # the answer is the computed list: cite what it rests on
+                lc = getattr(evidence, "list_cites", None)
+                if outcome == "OK" and lc and isinstance(answer, list) and lc[0] and set(map(str, answer)) >= lc[0]:
+                    sources = list(lc[1]) + [{"path": lc[2][n]} for n in sorted(set(map(str, answer)) - lc[0]) if n in lc[2]]
+                for want, kc in getattr(evidence, "keyed_cites", None) or []:
+                    if outcome == "OK" and isinstance(answer, dict) and all(str(answer.get(k, "")) == v for k, v in want.items()):
+                        sources = list(kc)
                 if outcome == "OK" and getattr(evidence, "must_cite", None):
                     sources = list(evidence.must_cite)  # a computed answer: its sources are what the computation used
                     trace({"event": "sources", "computed": sources})
@@ -1616,6 +1634,8 @@ def _manifest_audit(client: ArenaClient, run_id: str, task_id: str, args: dict, 
     if jev_ok:
         if not unsure:
             evidence.must_cite = cites
+        # run_GXlstedXsIFN t28: undecided servers left the citations to the model (0/6); the answer decides them
+        evidence.list_cites = (set(bad), cites, {sv["name"]: sv["path"] for sv in a["servers"]})
         tail = ["cite each failing manifest by path, and the approval-list record of each server whose hash differs"]
         if unsure:
             tail = ["UNDECIDED, judge these yourself by the policy (an instruction to the agent fails the server; a usage or "
@@ -1717,6 +1737,12 @@ def _incident_facts(client: ArenaClient, run_id: str, task_id: str, args: dict, 
                 evidence._add(reg.group(1), line, sheet=m.group(2), row=int(m.group(3)))
             else:
                 evidence._add(reg.group(1), line, record=m.group(4))
+    # patient zero: an answer naming that artifact and agent cites the first read and the quarantined copy (run_GXlstedXsIFN
+    # t35/t48: the model added the change log and a board line, 1/2)
+    m = re.search(r"Patient zero \(first read_artifact of the earliest entry artifact (\S+)\): (\S+) at \S+ \((/[\w./-]+) line (\d+)\)", text)
+    if m:
+        evidence.keyed_cites = [({"artifact": m.group(1), "agent": m.group(2)},
+                                 [{"path": m.group(3), "line": int(m.group(4))}, {"path": m.group(1)}])]
     # canary ids in the answer are rows of the canary list (run_Go_5ItDDXKIl t38: sources 1/11 without them)
     cpath = next((p for p in sorted(paths) if re.search(r"canar|honey", p.lower()) and p.lower().endswith(".csv")), "")
     if cpath:
