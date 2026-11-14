@@ -591,6 +591,8 @@ def transfer_lines(t: dict) -> list[str]:
                  f"{len(allids)} records summed over {len(cnt)} transfers (every transferred record, re-sends and overlaps add up; "
                  f"{len(set(allids))} distinct ids); successful transfers only: {sum(len(x['ids']) for x in ok)} summed, "
                  f"{len({i for x in ok for i in x['ids']})} distinct. Check the runbook for which of these it wants.")
+        L.append("An answer (or draft) that rests on this count or these domains cites EVERY counting transfer above by its "
+                 + ("sheet + row" if t["sheet"] else "record id") + f" in {t['path']} (not the log lines), plus any document it used.")
         L.append("Destination domains of the counting transfers: " + json.dumps(sorted({x["dest"] for x in cnt}))
                  + "; successful only: " + json.dumps(sorted({x["dest"] for x in ok})))
         L.append(f"First counting transfer (blocked or successful): {cnt[0]['id']} at {iso(cnt[0]['ts'])}"
