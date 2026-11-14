@@ -299,3 +299,8 @@ Format example (ignored: it sits in a code block). Write your entries below it, 
 - why: C ist logarithmisch: halbe Kosten ≈ +0.15–0.2 auf C ≈ +0.08 final, mehr als die meisten Genauigkeits-Fixes. Die lokalen Werkzeug-Beschreibungen allein sind 11.2k Zeichen (~2.8k Tokens) und gehen mit jedem Modell-Call mit. Jetzt bekommt jede Aufgabe view_image, download_file, filter_rows, incident_facts und submit fest; sha256, earliest_slot, capabilities, review_access, board_triage, manifest_audit, domain_contacts nur, wenn der autorisierte Text (Instruktion + offenes Ticket) ihr Thema nennt (Regex-Liste SPECIAL_TOOLS, großzügig). Ein Aufruf per Name funktioniert weiter.
 - rejected: Beschreibungen kürzen (verliert die Beispiele, an denen das Modell die Syntax lernt), max_steps senken
 - evidence: Tests grün; Messung im nächsten vollen Run (Kosten pro Run vorher $0.40–0.46).
+
+## 15:52 · Request-Log-Policy als Filter in Code
+- decided_by: ai
+- why: Die Variante „break the access-log policy (in the same directory)“ lag bei 0.075 / 0.1 / 0.6 / 0.165 und war mit bis zu $0.053 der teuerste Task: das Modell verband die Ticket-Tabelle nie per `no_match`. Ausformulierte Regeln (POLICY-Datei neben dem Log oder in der Aufgabe) werden jetzt in eine filter_rows-Spezifikation übersetzt (`is exactly`, `starts`, `is not`, `field is empty`, „no valid change ticket in X: status, match the request's …, valid_from/valid_until, revoked_at“) und das Ergebnis (Anzahl + IDs) liegt der Aufgabe bei. Kurzformen ohne Wortlaut bleiben beim Modell (dort schon 1.0).
+- evidence: offline 4/4 exakt (run_Sb-7mLdXYUMt t25 37 IDs, run_32SoTk4qmWz4 t01 45, t47 8, run_GXlstedXsIFN t19 10); Unit-Test.

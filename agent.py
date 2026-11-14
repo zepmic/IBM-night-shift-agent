@@ -571,6 +571,27 @@ def _solve(client: ArenaClient, run_id: str, task: Task, tool_specs: list[ToolSp
                                        "permissions; check the policy file for rules beyond these three, then submit) ===\n" + pre_review)
             local_seen.add("review_access{}")
             trace({"event": "tool", "name": "review_access", "args": {}, "output": pre_review, "local": True, "preloaded": True})
+    # A request-log policy (in a POLICY file next to the log, or written out in the task) is a filter in code
+    # (run_Sb-7mLdXYUMt t25 0.1 / $0.053, run_hP6Aq5nhZhYl t03 0.075: the model never joined the ticket table).
+    m_log = re.search(r"(/[\w./-]+requests?\.csv)", policy.authorised_text or "")
+    if m_log and re.search(r"violat|break", policy.authorised_text or "", re.I):
+        d = m_log.group(1).rsplit("/", 1)[0]
+        pol = next((x for x in sorted(paths or ()) if x.startswith(d + "/") and re.search(r"polic", x.lower()) and x.lower().endswith(".md")), "")
+        rule = (policy.authorised_text or "") if re.search(r"is exactly|field starts|field is empty", policy.authorised_text or "") else ""
+        if not rule and pol:
+            try:
+                rule = client.download_file(run_id, task.task_id, pol)[0].decode("utf-8", "replace")
+            except Exception:  # noqa: BLE001
+                rule = ""
+        spec = _policy_spec(rule, m_log.group(1)) if rule else None
+        if spec:
+            out = _filter_rows(client, run_id, task.task_id, spec, evidence, cfg.max_output_chars)
+            if not out.startswith("ERROR"):
+                messages[1]["content"] += ("\n\n=== COMPUTED: the policy's conditions applied in code (" + json.dumps(spec["where"])[:600]
+                                           + "); the matching rows are the violations, check the policy for anything not covered ===\n"
+                                           + "\n".join(l for l in out.splitlines() if re.search(r"rows match|ids of all matching", l))[:4000])
+                local_seen.add("filter_rows" + json.dumps(spec, sort_keys=True, default=str))
+            trace({"event": "tool", "name": "policy_filter", "args": spec, "output": out[:1500], "local": True, "preloaded": True})
     # Which breach-notification clause is in force for a customer: computed in code (base clause, signed amendments
     # effective by now, the latest wins); run_Go_5ItDDXKIl t25/t37 and run_32SoTk4qmWz4 t36 took a future or unsigned one.
     if re.search(r"notif\w*[^.]{0,60}(deadline|window|hours)|(deadline|window)[^.]{0,40}notif", policy.authorised_text or "", re.I) \
@@ -934,6 +955,38 @@ SPECIAL_TOOLS = [
 def _special_tools(text: str) -> list[dict]:
     t = text or ""
     return [globals()[name] for rx, name in SPECIAL_TOOLS if re.search(rx, t, re.I)]
+
+
+def _policy_spec(rule: str, log_path: str) -> dict | None:
+    """A request-log policy worded as conditions ("action is exactly \"read\"", "the actor field starts \"external:\"",
+    "the ticket field is empty", "result is not \"denied\"", "no valid change ticket in X: status \"approved\", match
+    the request's actor and resource, valid_from inclusive, valid_until exclusive, before revoked_at") -> filter_rows args."""
+    r = " ".join(rule.split())
+    where: list[dict] = []
+    for m in re.finditer(r"\b(\w+) is (?:exactly )?\"([^\"]+)\"", r):
+        if not re.search(r"\bnot\s*$", r[:m.start()]):
+            where.append({"column": m.group(1), "op": "eq", "value": m.group(2)})
+    for m in re.finditer(r"\b(\w+) (?:field )?starts(?: with)? \"([^\"]+)\"", r):
+        where.append({"column": m.group(1), "op": "startswith", "value": m.group(2)})
+    for m in re.finditer(r"\b(\w+) is not \"([^\"]+)\"", r):
+        where.append({"column": m.group(1), "op": "ne", "value": m.group(2)})
+    for m in re.finditer(r"\b(\w+) field is empty", r):
+        where.append({"column": m.group(1), "op": "empty"})
+    t = re.search(r"no valid (?:change )?ticket in (/[\w./-]+\.csv)(.*?)(?:\d\.\s|$)", r)
+    if t:
+        body = t.group(2)
+        st = re.search(r"status \"([^\"]+)\"", body)
+        cols = re.search(r"match the request's ([\w, ]+?)(?:,? and cover|$|;)", body)
+        on = {c: c for c in re.findall(r"\w+", cols.group(1)) if c not in ("and", "the")} if cols else {}
+        nm: dict = {"path": t.group(1), "on": on}
+        if st:
+            nm["where"] = [{"column": "status", "op": "eq", "value": st.group(1)}]
+        if re.search(r"valid_from", body) and re.search(r"valid_until", body):
+            nm["within"] = {"column": "ts", "from": "valid_from", "until": "valid_until"}
+        if re.search(r"revoked_at", body):
+            nm["before"] = {"column": "ts", "other": "revoked_at"}
+        where.append({"op": "no_match", "value": nm})
+    return {"path": log_path, "where": where} if len(where) >= 3 else None
 
 
 TICKET_VISION_Q = ("This is a scanned ticket. First line of your answer: exactly `status: open` or `status: closed`, as the "

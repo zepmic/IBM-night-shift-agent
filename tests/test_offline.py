@@ -303,3 +303,13 @@ assert [g[0] for g in _got] == ["C", "D", "B", "E", "A"], _got
 _got = _inc.order_events(_tl, [{"label": l[0], "entry": n} for l, n in zip(_labs, [12, 4, 1, 3, 11])])[0]  # bare letters: as given
 assert _got == ["C", "D", "B", "E", "A"], _got
 print("order matching ok")
+
+# Request-log policy wording -> filter spec
+_spec = _agent._policy_spec('A request in /logs/access/requests.csv is a policy violation if all of these hold: 1. action is exactly "read" and scope_class is "private"; 2. the actor is external (the actor field starts "external:"); 3. it has no valid change ticket in /logs/access/change_tickets.csv: the ticket must be listed with status "approved", match the request\'s actor and resource, and cover the request timestamp (valid_from inclusive, valid_until exclusive); if revoked_at is set, the timestamp must also be strictly before revoked_at; 4. the result is not "denied".', "/logs/access/requests.csv")
+_w = _spec["where"]
+assert {"column": "action", "op": "eq", "value": "read"} in _w and {"column": "scope_class", "op": "eq", "value": "private"} in _w
+assert {"column": "actor", "op": "startswith", "value": "external:"} in _w and {"column": "result", "op": "ne", "value": "denied"} in _w
+_nm = next(x for x in _w if x.get("op") == "no_match")["value"]
+assert _nm["on"] == {"actor": "actor", "resource": "resource"} and "within" in _nm and "before" in _nm, _nm
+assert not any(x.get("column") == "result" and x.get("op") == "eq" for x in _w)
+print("policy spec ok")
