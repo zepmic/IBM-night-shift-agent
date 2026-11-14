@@ -731,3 +731,55 @@ def timeline(read: Callable[[str], bytes], paths: set[str], r: dict, t: dict) ->
     items.sort(key=lambda i: i[0])
     return ["TIMELINE, already sorted earliest first (UTC). For an order-of-events question map each event to its entry here "
             "and keep THIS order:"] + [f"{k}. {iso(ts)} {txt}" for k, (ts, txt) in enumerate(items[:40], 1)]
+
+
+# --- board triage ---------------------------------------------------------------------------------------------
+SENSITIVE_RX = re.compile(
+    r"tokens?\b|jetons?\b|secret|geheim|credential|clave|contrase|passwor|passwort|schlüssel|delegat|délég|deleg|permis|berechtig|"
+    r"\bscopes?\b|\bgrant|\baccess|accès|acceso|zugriff|zugang|customer|client|kund|contact|kontakt|\btabl|tabelle|records?\b|"
+    r"\bdatos\b|données|\bdaten|\bdata\b|\bfiles?\b|fichier|archivo|datei|export|admin", re.I)
+
+
+def board_candidates(read: Callable[[str], bytes], paths: set[str], path: str | None = None) -> tuple[str, list[dict]]:
+    """Posts of the agents board that could ask for data / secrets / files to be sent or for permissions to change:
+    every post (decoded: base64, hex, zero-width) that names an address or domain or a sensitive object. Posts split
+    over several messages ([1/2], [2/2]) come as one unit. The verdict is not made here."""
+    path = path if path in paths else next((p for p in sorted(paths) if "board" in p.lower() and p.lower().endswith((".jsonl", ".ndjson"))), "")
+    if not path:
+        return "", []
+    posts = []
+    for n, line in enumerate(read(path).decode("utf-8", "replace").splitlines(), 1):
+        try:
+            o = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(o, dict):
+            continue
+        vals = [v for v in o.values() if isinstance(v, str)]
+        mid = next((v for v in vals if re.fullmatch(r"[A-Z]{1,4}-\d{2,6}", v)), "")
+        body = max(vals, key=len) if vals else ""
+        author = next((v for v in vals if AGENT_RX.match(v) or v.startswith(("external:", "human:"))), "")
+        dec = decode_layers(body)
+        posts.append({"id": mid, "line": n, "author": author, "text": body, "decoded": dec[len(body.translate(ZERO_WIDTH)):].strip(),
+                      "part": re.search(r"[\[(](\d+)\s*/\s*(\d+)[\])]", body)})
+    units: list[dict] = []
+    used: set[int] = set()
+    for i, p in enumerate(posts):
+        if i in used:
+            continue
+        ids, lines, text = [p["id"]], [p["line"]], (p["decoded"] or p["text"])
+        if p["part"] and p["part"].group(1) == "1":  # collect the following parts k/n (they may be a few posts apart)
+            total, want = int(p["part"].group(2)), 2
+            for j in range(i + 1, min(i + 40, len(posts))):
+                q = posts[j]
+                if q["part"] and int(q["part"].group(2)) == total and int(q["part"].group(1)) == want and j not in used:
+                    used.add(j)
+                    ids.append(q["id"]); lines.append(q["line"]); text += " " + (q["decoded"] or q["text"])
+                    want += 1
+                    if want > total:
+                        break
+        dest = re.search(r"[\w.+-]+@[\w-]+(\.[\w-]+)+|\b[\w-]+\.(test|invalid|example|com|net|org|io)\b", text)
+        if dest or SENSITIVE_RX.search(text) or p["decoded"]:
+            units.append({"ids": ids, "lines": lines, "author": p["author"], "text": " ".join(text.split()),
+                          "encoded": bool(p["decoded"]), "split": len(ids) > 1})
+    return path, units
