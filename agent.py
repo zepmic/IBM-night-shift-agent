@@ -227,6 +227,9 @@ INCIDENT_TOOL = {
             "local_utc_offset_h": {"type": "number", "description": "offset of the local zone used by the archive (default 1 = CET)"},
             "agent": {"type": "string", "description": "instead of the incident sheet: everything the gateway log says THIS agent "
                       "did (secret reads, delegations, transfers, with lines), e.g. to check its status report claim by claim"},
+            "order": {"type": "array", "description": "order-of-events questions: for each event of the question its label and "
+                      "the number of its entry in the sheet's TIMELINE; returns the labels in chronological order",
+                      "items": {"type": "object", "properties": {"label": {"type": "string"}, "entry": {"type": "integer"}}}},
             "entry_artifacts": {"type": "array", "items": {"type": "string"}, "description": "only to override which quarantined "
                                 "artifacts count as attack entries (copy paths)"}}},
     },
@@ -375,7 +378,7 @@ def clean_sources(raw: Any) -> list[dict]:
     return out[:100]
 
 
-PINNED = ("INCIDENT FACTS", "/integrations", "GATEWAY LOG", "/board/", "answer: ", "agents with all of", "shortest delegation chain", "earliest start")
+PINNED = ("INCIDENT FACTS", "chronological order", "/integrations", "GATEWAY LOG", "/board/", "answer: ", "agents with all of", "shortest delegation chain", "earliest start")
 
 
 def trim_history(messages: list[dict], cfg: Config) -> list[dict]:
@@ -1524,6 +1527,19 @@ def _incident_facts(client: ArenaClient, run_id: str, task_id: str, args: dict, 
             text = incident.agent_activity(read, paths, str(args["agent"]).strip(), args)
         else:
             text = incident.fact_sheet(read, paths, args, vision, facts)
+            if args.get("order"):
+                labels, used, bad = incident.order_events(text, args["order"])
+                cites = []
+                for u in used:
+                    cites += [{"path": m.group(1), "line": int(m.group(2))} for m in re.finditer(r"(/[\w./-]+) line (\d+)", u)]
+                    cites += [{"path": m.group(1), "sheet": m.group(2), "row": int(m.group(3))} for m in re.finditer(r"(/[\w./-]+) sheet '([^']+)' row (\d+)", u)]
+                    cites += [{"path": m.group(1), "record": m.group(2)} for m in re.finditer(r"(/[\w./-]+) record ([\w-]+)", u)
+                              if not re.search(r" line \d+", u)]
+                if labels and not bad:
+                    evidence.must_cite = cites
+                return ("chronological order (earliest first): " + json.dumps(labels) + ("\nPROBLEMS: " + "; ".join(bad) if bad else "")
+                        + "\nbased on:\n" + "\n".join(used) + "\nIf an event of the question has no fitting entry, find its time with "
+                        "another tool and place it yourself.")
     except Exception as e:  # noqa: BLE001 - the model can still use query_logs
         return f"ERROR: {type(e).__name__}: {e}"
     # who acted in which attack trace comes from the events' own structured fields, never from free text

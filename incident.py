@@ -729,8 +729,8 @@ def timeline(read: Callable[[str], bytes], paths: set[str], r: dict, t: dict) ->
                 if ts and re.search(r"secret|token|exfil|egress|outbound|transfer|upload|artifact", line, re.I) and any(k in line for k in keys):
                     items.append((ts, f"SIEM alert: {line[:100]} ({p} {'sheet ' + repr(sheet) + ' row ' + str(n) if sheet else 'line ' + str(n)})"))
     items.sort(key=lambda i: i[0])
-    return ["TIMELINE, already sorted earliest first (UTC). For an order-of-events question map each event to its entry here "
-            "and keep THIS order:"] + [f"{k}. {iso(ts)} {txt}" for k, (ts, txt) in enumerate(items[:40], 1)]
+    return ["TIMELINE, sorted earliest first (UTC). For an order-of-events question do not sort yourself: call incident_facts "
+            "again with order=[{\"label\": \"A\", \"entry\": <number below>}, ...] and submit the order it returns:"] + [f"{k}. {iso(ts)} {txt}" for k, (ts, txt) in enumerate(items[:40], 1)]
 
 
 # --- board triage ---------------------------------------------------------------------------------------------
@@ -889,3 +889,22 @@ def manifest_audit(read: Callable[[str], bytes], paths: set[str], directory: str
                         "hash_ok": (bool(want) and sha == want) or not csv_path,  # no approval list here: no hash rule
                         "descriptions": [" ".join(decode_layers(t).split()) for t in dict.fromkeys(descs)]})
     return {"dir": d, "csv": csv_path, "servers": servers}
+
+
+def order_events(sheet: str, order: list) -> tuple[list[str], list[str], list[str]]:
+    """(labels sorted by the time of their timeline entry, the entry lines used, problems). `order` maps each label
+    of the question to the number of an entry of the sheet's timeline."""
+    entries = {int(m.group(1)): m.group(0) for m in re.finditer(r"(?m)^(\d+)\. (\d{4}-\d\d-\d\dT\S+Z) .*$", sheet.split("TIMELINE", 1)[-1])}
+    picked, bad = [], []
+    for o in order if isinstance(order, list) else []:
+        try:
+            label, n = str(o["label"]).strip(), int(o["entry"])
+        except Exception:  # noqa: BLE001
+            bad.append(f"unreadable item {o!r}")
+            continue
+        if n not in entries:
+            bad.append(f"{label}: no timeline entry {n}")
+            continue
+        picked.append((entries[n].split(" ", 2)[1], n, label))
+    picked.sort()
+    return [p[2] for p in picked], [entries[p[1]] for p in picked], bad
