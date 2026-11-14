@@ -111,3 +111,11 @@ Jede Änderung mit einem vollen Dev-Run bestätigen (Kosten stehen in `platform 
 Commit auf main, `git archive -o submission.tar.gz HEAD`, `POST /api/v1/submissions` → PUT des Archivs auf `upload.url`
 (Header aus `upload.headers`) → `POST /api/v1/submissions/<id>/ready`. Dann bestätigt ein Mensch im Dashboard
 „Prepared by your agent“ als **final submission**. Vorher Docker-Build lokal prüfen (README / AGENTS.md „Container contract“).
+
+## Arbeitsweise für die letzte Stunde: Tempo vor Vorsicht
+- Keine Wartezeiten: Während ein voller Dev-Run läuft (~6 min, im Hintergrund), am nächsten Hebel arbeiten.
+- Parallel arbeiten, wo es geht: Subagents oder parallele Shells für Offline-Prüfungen, Trace-Analyse, Tests. Leere
+  Dev-Runs (eval/offline/fresh.py) kosten $0 und dürfen jederzeit parallel laufen; nur volle Dev-Runs nie gleichzeitig.
+- Dev-Budget ist da (~$15 gesamt, bisher grob $11 verbraucht): pro Hebel ein voller Run zur Bestätigung ist ok.
+- Kleine, getestete Schritte schnell mergen und pushen, statt einen großen Umbau am Ende.
+- Harte Grenze: spätestens 16:40 den besten bestätigten Stand als finale Abgabe vorbereiten und das Team zum Bestätigen holen.
