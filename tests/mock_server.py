@@ -46,6 +46,7 @@ LLM_SCRIPT = {
 
 def scripted_completion(body: dict) -> dict:
     msgs = body.get("messages", [])
+    STATE.setdefault("first_prompt", next((x.get("content") or "" for x in msgs if x.get("role") == "user"), ""))
     m = re.search(r"Task (t\d+)", next((x.get("content") or "" for x in msgs if x.get("role") == "user"), ""))
     steps = LLM_SCRIPT.get(m.group(1) if m else "", [])
     n = sum(1 for x in msgs if x.get("role") == "tool")

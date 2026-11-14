@@ -11,6 +11,13 @@ import run_pi
 assert parse_args('{"a": 1}') == {"a": 1}
 assert parse_args('```json\n{"a": 1}\n```') == {"a": 1}
 assert parse_args(None) == {}
+assert normalize_answer({'"token"': '"TOK-1"', "n": 2, "l": ['"a"', "b"]}) == {"token": "TOK-1", "n": 2, "l": ["a", "b"]}
+assert normalize_answer('"2026-11-14T12:00:00Z"') == "2026-11-14T12:00:00Z" and normalize_answer('say "hi"') == 'say "hi"'
+import agent as _agent
+_paths = {"/AGENTS.md", "/ops/change_calendar.csv", "/fleet/a.csv", "/fleet/b.json"} | {f"/docs/agreements/x{i}.{'pdf' if i % 2 else 'md'}" for i in range(30)}
+_tree = _agent.local_tree(_paths, "/")
+assert "/ops/: change_calendar.csv" in _tree and "/docs/agreements/: 30 files (15 .md, 15 .pdf)" in _tree and "/: AGENTS.md" in _tree and len(_tree) < 500, _tree
+assert _agent.local_tree(_paths, "/fleet/").splitlines()[1:] == ["/fleet/: a.csv, b.json"] and _agent.local_tree(_paths, "/nope") == "" and _agent.local_tree(None, "/") == ""
 assert normalize_answer('["S-1"]') == ["S-1"] and normalize_answer("42") == 42 and normalize_answer("B7") == "B7"
 msgs = [{"role": "tool", "content": "x" * 1000, "tool_call_id": str(i)} for i in range(8)]
 t = trim_history(msgs, Config(keep_full_outputs=2, keep_small_chars=0))

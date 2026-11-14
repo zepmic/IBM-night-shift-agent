@@ -160,15 +160,27 @@ def parse_args(raw: Any) -> dict:
 
 
 def normalize_answer(a: Any) -> Any:
-    """If the model passed a JSON value as a string (e.g. '["S-01"]' or '42'), decode it."""
+    """If the model passed a JSON value as a string (e.g. '["S-01"]' or '42'), decode it; drop quotes it left around
+    keys and values (dev run: {"\"token\"": "\"TOK-1\""} scored 0 with every value right)."""
     if isinstance(a, str):
         s = a.strip()
         if s[:1] in "[{" or re.fullmatch(r"-?\d+(\.\d+)?", s):
             try:
-                return json.loads(s)
+                a = json.loads(s)
             except json.JSONDecodeError:
                 pass
-    return a
+    return _unquote(a)
+
+
+def _unquote(v: Any) -> Any:
+    if isinstance(v, str):
+        s = v.strip()
+        return s[1:-1] if len(s) >= 2 and s[0] == s[-1] == '"' else v
+    if isinstance(v, list):
+        return [_unquote(x) for x in v]
+    if isinstance(v, dict):
+        return {_unquote(k): _unquote(x) for k, x in v.items()}
+    return v
 
 
 SOURCE_INTS = ("page", "line", "row", "paragraph")
@@ -281,6 +293,10 @@ def _solve(client: ArenaClient, run_id: str, task: Task, tool_specs: list[ToolSp
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": f"Task {task.task_id}{f' (level {task.level})' if task.level else ''}:\n\n{task.instruction}"},
     ]
+    # The workspace map up front (manifest: no model call, ~350 tokens): the baseline spent up to 15 steps looking for
+    # a file whose directory the platform's truncated tree did not show.
+    if tree := local_tree(_existing_paths(client, run_id, task.task_id), "/"):
+        messages[1]["content"] += "\n\n" + tree
     trace({"event": "start", "task": task.task_id, "instruction": task.instruction, "model": cfg.model})
     evidence = srcs.Evidence()
     in_context: set[str] = set()  # read-only calls whose full output stays in the conversation (never trimmed)
@@ -361,6 +377,12 @@ def _solve(client: ArenaClient, run_id: str, task: Task, tool_specs: list[ToolSp
                     continue
                 trace({"event": "submit", "args": {**args, "answer": answer, "sources": sources}, "response": resp})
                 return resp
+            if name == "tree" and (text := local_tree(_existing_paths(client, run_id, task.task_id), str(args.get("path") or "/"))):
+                # the platform's tree of a big workspace exceeds the output cap and loses the directories at the end
+                in_context.add(key)
+                trace({"event": "tool", "name": name, "args": args, "output": text, "local": True})
+                messages.append({"role": "tool", "tool_call_id": call["id"], "content": text})
+                continue
             if name == "view_image":
                 text = _view_image(client, run_id, task.task_id, args, cfg, tracker)
                 if not text.startswith("ERROR"):
@@ -399,6 +421,31 @@ def _solve(client: ArenaClient, run_id: str, task: Task, tool_specs: list[ToolSp
             trace({"event": "tool", "name": name, "args": args, "output": text})  # full: offline replays need it
             messages.append({"role": "tool", "tool_call_id": call["id"], "content": text})
     return {"error": "step limit reached without submission"}
+
+
+TREE_DIR_MAX = 12  # a directory with more files than this is summarised by count and type
+
+
+def local_tree(paths: set[str] | None, root: str) -> str:
+    """The workspace map from the manifest: every directory on one line, complete and short. "" = not available."""
+    prefix = "/" + root.strip("/") + "/" if root.strip("/") else "/"
+    dirs: dict[str, list[str]] = {}
+    for p in sorted(paths or ()):
+        if p.startswith(prefix):
+            d, _, f = p.rpartition("/")
+            dirs.setdefault(d + "/", []).append(f)
+    lines = []
+    for d, files in dirs.items():
+        if len(files) <= TREE_DIR_MAX:
+            lines.append(f"{d}: {', '.join(files)}")
+        else:
+            exts: dict[str, int] = {}
+            for f in files:
+                e = f.rsplit(".", 1)[-1].lower() if "." in f else "?"
+                exts[e] = exts.get(e, 0) + 1
+            lines.append(f"{d}: {len(files)} files ({', '.join(f'{n} .{e}' for e, n in sorted(exts.items()))}); `list` it or `search` to pick one")
+    return ("All files by directory (read: md/txt/csv/json/jsonl; other formats: download_file, images: view_image)\n"
+            + "\n".join(lines)) if lines else ""
 
 
 def _existing_paths(client: ArenaClient, run_id: str, task_id: str) -> set[str] | None:
