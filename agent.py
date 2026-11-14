@@ -848,6 +848,7 @@ def _filter_rows(client: ArenaClient, run_id: str, task_id: str, args: dict, evi
                 "startswith": c.startswith(v), "endswith": c.endswith(v)}[op]
 
     conds = []
+    join_note = ""
     for w in where:
         col, op = str((w or {}).get("column", "")).strip(), str((w or {}).get("op", "eq")).strip()
         if op in ("has_match", "no_match"):
@@ -856,6 +857,7 @@ def _filter_rows(client: ArenaClient, run_id: str, task_id: str, args: dict, evi
             except Exception as e:  # noqa: BLE001 - the model gets the reason and can fix its spec
                 return f"ERROR in {op}: {e}"
             conds.append((-1, op, pred))
+            join_note = f"{op} joined on {json.dumps(getattr(pred, 'on', {}))}"
             continue
         if col not in header:
             return f"ERROR: no column {col!r} in {path}. Columns: {', '.join(header)}"
@@ -868,7 +870,8 @@ def _filter_rows(client: ArenaClient, run_id: str, task_id: str, args: dict, evi
     hits = [(n, r) for n, r in zip(nums, body) if ok(r)]
     if not conds:
         hits = hits[:5]
-    lines = [f"{path}{f' sheet {sheet!r}' if sheet else ''}: {len(hits)} of {len(body)} rows" + (" match (all conditions)" if conds else " shown (no conditions given)"),
+    lines = [f"{path}{f' sheet {sheet!r}' if sheet else ''}: {len(hits)} of {len(body)} rows" + (" match (all conditions)" if conds else " shown (no conditions given)")
+             + (f"; {join_note}" if join_note else ""),
              "columns: " + " | ".join(header)]
     used = sum(map(len, lines))
     shown = 0
@@ -971,6 +974,9 @@ def _match_pred(client: ArenaClient, run_id: str, task_id: str, header: list[str
     for d, keys in ((win, ("from", "until")), (bef, ("other",))):
         if d and (d.get("column") not in header or any(d.get(k) and d.get(k) not in ocols for k in keys)):
             raise ValueError(f"within/before columns do not exist: {d}")
+    okey = next(iter(other[0].keys()), None) if other else None  # the other table's id column (e.g. ticket)
+    if okey and okey in header and okey not in on and spec.get("auto_key", True):
+        on = {**on, okey: okey}  # run_hP6Aq5nhZhYl t03: the row's own ticket reference must match too (22 vs 39 ids)
     idx = {a: header.index(a) for a in on}
     index: dict[tuple, list[dict]] = {}
     for o in other:
@@ -996,6 +1002,7 @@ def _match_pred(client: ArenaClient, run_id: str, task_id: str, header: list[str
             return True
         return False
 
+    pred.on = on  # type: ignore[attr-defined]
     return pred
 
 

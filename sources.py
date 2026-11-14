@@ -322,11 +322,13 @@ def finalize(model_sources: list[dict], answer: Any, evidence: Evidence, existin
             break
     # Additions stay inside the budget the grader tolerates (about one citation per answer value, plus two); the
     # answer's own table rows first.
-    cands = evidence.candidates_by_value(answer, kept, max_add * 3)
+    cands = evidence.candidates_by_value(answer, kept, max_add * 3 + 2 * len(values))
     cands.sort(key=lambda c: str(c[1].get("record", "")).casefold() != c[0].casefold())
     added = []
-    for _, s in cands:
+    for v, s in cands:
+        own_row = str(s.get("record", "")).casefold() == str(v).casefold()  # the answer value IS this row's id
         if (existing is None or s["path"] in existing) and len(kept) + len(added) < len(values) + FREE_EXTRA \
-                and len(added) < max_add:
-            added.append(s)
+                and max_add > 0 and (own_row or sum(1 for a in added if not a.get("_own")) < max_add):
+            added.append({**s, "_own": True} if own_row else s)
+    added = [{k: v for k, v in a.items() if k != "_own"} for a in added]
     return kept + added, {"model": model_sources, "added": added, "dropped": dropped}
