@@ -306,6 +306,7 @@ class Config:
     budget: Any = None              # shared Budget of the run (None: no limit)
     task_cost_cap: float = 0.05     # one task never spends more than this before it has to submit
     direct_submit: bool = True      # a complete computed answer to a result-only task is submitted without a model call
+    preload_facts: bool = True      # incident questions get the fact sheet with the task instead of asking for it
     route: bool = True              # one small model call per task: which kinds of action does the task ask for?
 
 
@@ -638,6 +639,20 @@ def _solve(client: ArenaClient, run_id: str, task: Task, tool_specs: list[ToolSp
             if ids:
                 computed.append((sorted(ids), []))
         trace({"event": "tool", "name": "leak_check", "args": {}, "output": expl, "local": True, "preloaded": True})
+    # The fact sheet up front for incident questions: `incident_facts {}` was the model's first call in a third of all
+    # tasks (run_QfHOqhRM75Om, run_vgw01u5R4u-J: 32 of 96), one full call each just to ask for it.
+    _text = policy.authorised_text or task.instruction
+    if cfg.preload_facts and not computed and re.search(FACTS_TOPIC, _text, re.I) and not re.search(FACTS_OTHER, _text, re.I):
+        try:
+            facts_text = _incident_facts(client, run_id, task.task_id, {}, evidence, cfg, tracker)
+        except Exception as e:  # noqa: BLE001 - then the model calls the tool itself
+            facts_text = f"ERROR: {e}"
+        if not facts_text.startswith("ERROR"):
+            messages[1]["content"] += ("\n\n=== COMPUTED: incident_facts (already called for you without arguments; call it again only "
+                                       "with `agent` or `order`) ===\n" + facts_text)
+            local_seen.add("incident_facts{}")
+            local_out["incident_facts{}"] = facts_text
+            trace({"event": "tool", "name": "incident_facts", "args": {}, "output": facts_text, "local": True, "preloaded": True})
     trace({"event": "start", "task": task.task_id, "ambiguous": ambiguous, "instruction": task.instruction, "model": cfg.model,
            "allowed_actions": sorted(policy.allowed), "inbox": policy.inbox, "ticket": delegated,
            "route": "failed" if cfg.route and route is None else "ok"})
@@ -989,6 +1004,11 @@ PLATFORM_TOPICS = {
     "get_containment": r"contain|quarantin|rotat|revok|block|isolat|incident|compromis|ticket",
     "access_path": r"access|path|chain|delegat|reach|permission|scope|capabilit|trifecta|grant|privilege",
 }
+
+
+FACTS_TOPIC = (r"incident|compromis|patient zero|exfiltrat|canar|honeytoken|attacker|contain|quarantin|exposed|entry (point|artifact)"
+               r"|chronolog|earliest (first|to latest)")
+FACTS_OTHER = r"board|manifest|\bmcp\b|access[- ]review|access requests?|agreement|leak check"  # helpers of their own
 
 
 def _special_tools(text: str) -> list[dict]:
