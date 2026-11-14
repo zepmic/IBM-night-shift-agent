@@ -50,7 +50,7 @@ def main() -> int:
     p.add_argument("--limit", type=int, help="solve at most N of the selected tasks")
     p.add_argument("--model", default=llm.MAIN_MODEL, help="chat model (default %(default)s; use a :free model to test)")
     p.add_argument("--parallel", type=int, default=4)
-    p.add_argument("--max-steps", type=int, default=25)
+    p.add_argument("--max-steps", type=int, default=Config.max_steps)
     p.add_argument("--max-tokens", type=int, default=4096)
     p.add_argument("--temperature", type=float, default=0.2)
     p.add_argument("--reasoning-effort", choices=["none", "low", "medium", "high"], default=None)

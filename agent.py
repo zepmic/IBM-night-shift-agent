@@ -178,11 +178,11 @@ EARLIEST_SLOT_TOOL = {
 @dataclass
 class Config:
     model: str = llm.MAIN_MODEL
-    max_steps: int = 25
+    max_steps: int = 14             # run_hP6Aq5nhZhYl: tasks past 20 steps = 62 % of cost at 0.36 avg score
     max_tokens: int = 4096
     temperature: float | None = 0.2
     reasoning_effort: str | None = None
-    keep_full_outputs: int = 4      # newest N tool outputs stay untruncated
+    keep_full_outputs: int = 3      # newest N tool outputs stay untruncated
     keep_small_chars: int = 6000    # outputs up to this size are never truncated (rule files, small tables)
     old_output_chars: int = 300     # older ones are cut to this length
     max_output_chars: int = 8000    # hard cap per tool output
