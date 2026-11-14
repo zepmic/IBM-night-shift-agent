@@ -43,3 +43,8 @@ Begründung: [`breaker/candidates.md`](../breaker/candidates.md) §5. Ab ~14:00 
 ## Update ~14:10 — p4 → p6
 `t02-p4` (Tatsache im Log-Stil) 0/18 → **retired**. Neu: `t02-p6` = cand-frame-4 (echtes detail-Vokabular „persistence: new delegation to {agent}“), aktiv ab 14:30 Wien.
 Stand 14:06: p5 1/14 (7 %), p3 2/38 (5 %). Final-Slot leer; Bester ~16:30 → Final.
+
+## Update ~15:10 — p6 → p7, Final-Tendenz
+Stand 15:05: `t02-p5` 4/92 (4.3 %, Treffer auf L1/L2/L3), `t02-p3` 3/110 (2.7 %, nur L1), `t02-p6` 0/47 → **retired**.
+Neu: `t02-p7` (kurze SOC-Feststellung, aktiv ab 15:30). Final-Tendenz: Re-Attribution-Mechanismus (wie p5), neuer Text, lokal gehalten.
+Fremde Treffer auf uns: weiterhin nur 2 (12:45, 13:12), über 27 Team-Runs.
