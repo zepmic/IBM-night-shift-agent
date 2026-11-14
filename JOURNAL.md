@@ -129,3 +129,21 @@ Format example (ignored: it sits in a code block). Write your entries below it, 
 - why: Im Szenario von run_hP6Aq5nhZhYl sagt das Runbook „token's service or any of its consumer services“ und 30 statt 60 min Puffer; das Tool nahm nur einen Service → 08:00 und Regelverstoß (t13). `service` nimmt jetzt eine Liste.
 - rejected: Regeltext im Code parsen (Formulierung variiert; das Modell liest die Regel und übergibt Parameter)
 - evidence: tests/test_guard.py mit dem echten Kalender: ci-runner+billing+support-desk, 30 min → 19:00.
+
+## 13:12 · capabilities: effektive Rechte über Delegation in Code (+ what_if)
+- decided_by: ai
+- why: „Lethal trifecta“/„current permissions“-Tasks lagen bei 0.14–0.39 (Modell rechnete transitive Delegation im Kopf). Tool rechnet eigene Scopes + Delegation transitiv, mit späteren Änderungen und ausgeschlossenen (quarantänisierten) Agents; `what_if` prüft jeden offenen Zugriffsantrag einzeln auf neue Trifecta (Access-Review-Regel 3).
+- rejected: Regeln der Access-Policy in Code (Owner-Prüfung etc. bleibt beim Modell, Formulierung variiert)
+- evidence: Seed 675666297: t37 0.27 → 1.00, t38 0.22 → 0.94, t06 0.36 → 0.49, t45 0.42 → 0.60 (run tools_run). Offline t37 13/13.
+
+## 13:14 · count_distinct: Records als Vereinigung von Bereichen zählen
+- decided_by: ai
+- why: Transfers haben überlappende Bereiche `C-1..C-9`; „distinct“ verlangt die Vereinigung. Modell verzählte sich (t21 1854 statt 1754). `filter_rows` zählt jetzt distinct, optional pro Gruppe über eine Lookup-Tabelle (Agent → Team).
+- rejected: Summe der `count`-Spalte (doppelt gezählte Überlappungen)
+- evidence: t01 0 → 0.85, t12 0.85 → 1.00 (1 Tool-Call). Offline Finance 3119 = erwartet.
+
+## 13:22 · Join ergänzt die ID-Spalte, eigene Datensatz-IDs werden voll zitiert, Wiederholungen lokaler Tools abgefangen
+- decided_by: ai
+- why: t03 nutzte den Join erst gar nicht (7× gleicher filter_rows-Call), dann ohne Ticket-Spalte (22 statt 39). Jetzt: identische lokale Calls bekommen einen Hinweis statt Neuberechnung; hat die Tabelle eine Spalte wie die ID-Spalte der Join-Tabelle, wird sie mit abgeglichen. Antwortwerte, die selbst Datensatz-IDs sind, werden über den 4er-Deckel hinaus zitiert (Grader-Budget „erwartet + 2“ bleibt).
+- rejected: Modell per Prompt zwingen, die Spalte zu nennen (hat es trotz Beispiel nicht getan)
+- evidence: t03 0.06 → 0.41 (vor ID-Spalten-Fix); offline jetzt 39/39 auch mit der Spezifikation des Modells. tests/test_real_data.py prüft die Tools gegen echte Dev-Dateien (auch im Docker-Wächter).
