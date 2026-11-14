@@ -282,3 +282,9 @@ Format example (ignored: it sits in a code block). Write your entries below it, 
 - decided_by: ai
 - why: Gegenprobe über alle lokalen Seeds: 8/12 exakt, je ein Token fehlte, weil er in einem Board-Post stand („leaked … in the dump or on the agents board“) als `TOK-X=wert`. Jetzt werden Board-Dateien gelesen, wenn der Text das Board nennt (JSON-Strings entpackt, Zitat per Zeile), und Werte nach `:`/`=` überlappend geprüft.
 - evidence: offline 12/12 exakt inkl. Quellen (run_iOrNuR6b10uJ, run_32SoTk4qmWz4, run_xVoe6Wvi24YP, run_GXlstedXsIFN, run_Go_5ItDDXKIl).
+
+## 15:42 · Ereignis-Reihenfolge: Zuordnung Label → Zeitleisten-Eintrag in Code geprüft
+- decided_by: ai
+- why: Reihenfolge-Tasks lagen je Run 1–3× bei 0.3–0.45. run_GXlstedXsIFN t40: die Zeitleiste enthielt alle Ereignisse (SIEM-Alarm, Quarantäne), aber das Modell vergab die Einträge 1..5 der Reihe nach. Jetzt sollen Labels den Ereignistext tragen („A: moderation-18 was quarantined“); `order_events` vergleicht Wortstämme mit jedem Eintrag (Zitate ausgenommen), ordnet gierig eindeutig zu und überstimmt die Wahl des Modells nur, wenn ein anderer Eintrag klar besser passt. Reine Buchstaben bleiben wie angegeben.
+- rejected: Jev/Embedding pro Paar (zusätzliche Calls; Wortstämme reichen für die generierten Formulierungen)
+- evidence: Unit-Test mit der Zeitleiste von t40: blinde Zuordnung 1..5 → C D B E A = erwartet. Plattform gab beim Schreiben 500er, darum kein Offline-Lauf über mehrere Seeds.
