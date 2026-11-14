@@ -249,3 +249,16 @@ finally:
 assert _seen[0].startswith("[part 1 of 3; call download_file with part=2 for more]\n1. paragraph 1 ") and len(_seen[0]) < 8100
 assert _seen[1].startswith("[part 3 of 3, the last]") and _seen[1].rstrip().endswith("x") and _seen[2].startswith("ERROR: this file has only 3 parts")
 print("format tests ok")
+
+# Scanned tickets: the status line decides; pictures embedded in text artifacts are found for vision
+import base64 as _b64
+import incident as _inc
+assert _agent._image_ticket_open("[vision transcription of /tickets/a.jpg — x]\nstatus: open\nTicket IR-1 OPEN")
+assert not _agent._image_ticket_open("[vision transcription of /tickets/a.jpg — x]\nstatus: closed\nTicket IR-1 CLOSED")
+assert not _agent._image_ticket_open("Ticket IR-2\nStatus: CLOSED\nRequest: something open")
+_png = b"\x89PNG" + b"x" * 300
+_doc = '{"icon": "data:image/png;base64,' + _b64.b64encode(_png).decode() + '"}'
+assert _inc.embedded_images(_doc) == [("image/png", _png)]
+assert _inc.read_embedded(lambda p: _doc.encode(), "/a.json#img0") == ("image/png", _png)
+assert _inc.read_embedded(lambda p: b"", "/a.json") is None
+print("image tickets + embedded images ok")
