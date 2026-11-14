@@ -53,7 +53,6 @@ uv installieren (Mac): `brew install uv`
 | 11:30 | Datensammler + Offline-Eval stehen |
 | 12:00 | Pizza |
 | 14:00 | **Demo-Submission 1** |
-| 15:45 | Feature Freeze. Nur noch Bugfixes |
 | 16:30–16:45 | **Final-Submission hochladen** |
 | 17:00 | Alles gesperrt |
 

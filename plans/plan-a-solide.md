@@ -87,7 +87,7 @@ Achtung: Dev-Runs kosten echtes Budget. Ein ganzer Run = 30 Tasks. Zum Debuggen 
 | 14:00 | **Demo-Submission 1** (prüft Container, Zeit, Kosten) |
 | 14:00–15:45 | Iterieren: Familie für Familie, Kosten runter (Calls streichen, Kontext kürzen) |
 | ~15:00 | Demo-Submission 2 |
-| 15:45 | **Feature Freeze.** Nur Bugfixes. Voll-Run auf frischem Seed als Abnahme |
+| 15:45 | Voll-Run auf frischem Seed als Abnahme |
 | 16:15 | Demo-Submission 3 = Kandidat |
 | 16:30–16:45 | **Final-Submission hochladen** (WLAN-Puffer!) |
 | bis 17:00 | Final-Angriff festlegen (falls Plan-B-Breaker aktiv) |
