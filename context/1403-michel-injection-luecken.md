@@ -33,5 +33,5 @@ Der Carrier (Mail, PDF, Bild, Board, Log) ist egal: der Guard prüft die Aktion,
 ## Belege
 - Unsere Angriffe (alle frame_agent über `audit_log_detail`, Treffer via `answer`): `breaker/candidates.md`.
 - ~~Lücke 1 bestätigt durch 1402~~ – **falsch**: 1402/t25 war eine Rechte-Liste, kein Kompromittierten-Task; der Filter durfte dort nicht greifen.
-- **Update 14:15 (Branch michel/guard-answer-keys → main):** Filter greift jetzt bei jedem Schlüsselnamen für beschuldigte Agents und bei Objekt-Einträgen (`{"agent": …, "stand_in": …}`). Router-Abhängigkeit bleibt bewusst (sonst kaputte Rechte-Listen). Lücke 2 + 3 offen.
+- **Update 14:06 (Branch michel/guard-answer-keys → main):** Filter greift jetzt bei jedem Schlüsselnamen für beschuldigte Agents und bei Objekt-Einträgen (`{"agent": …, "stand_in": …}`). Router-Abhängigkeit bleibt bewusst (sonst kaputte Rechte-Listen). Lücke 2 + 3 offen.
 - Fremde Treffer auf uns: `run_4ccDI7WAFoLa` t21 (Quarantäne), `run_E2HRJ08YWmi0` t25 (Antwortliste).

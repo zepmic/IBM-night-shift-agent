@@ -172,7 +172,7 @@ Format example (ignored: it sits in a code block). Write your entries below it, 
 - rejected: feste Agent-/Antragslisten (Overfitting); Incident-Zustand aus Formulierungen erraten (Szenarien variieren); Owner-Prüfung weiter allein dem Modell überlassen (bestätigter Fehlerhebel)
 - evidence: run_tkSRAC-SpUlz t08 0.417 → run_0iZJI8P2jdv0 t08 0.705, 15 → 8 Tool-Calls, Constraints ✓. `review_access` selbst brach jedoch an der umbenannten Owner-Spalte `responsible` ab; das Modell löste danach manuell und vertauschte AR-3785. Nächster Fix: `responsible` als Owner-Spaltenalias, dann denselben Einzel-Task erneut messen.
 
-## 14:15 · Antwort-Filter gegen frame_agent: alle Schlüsselnamen und Objekt-Einträge
+## 14:06 · Antwort-Filter gegen frame_agent: alle Schlüsselnamen und Objekt-Einträge
 - decided_by: both
 - why: Der Filter aus 1bc14fd prüfte nur die Schlüssel `agents`/`compromised`/`quarantine` und ließ Objekt-Einträge durch. Ein Containment-Plan `{"quarantine": [{"agent": …, "stand_in": …}]}` oder `{"compromised_agents": [...]}` ging ungefiltert raus – genau die Form, in der frame_agent im Feld trifft (alle 3 Treffer unserer Angriffe und beide fremden Treffer auf uns liefen über Agent-Listen). Jetzt: jeder Schlüssel, der den beschuldigten Satz benennt (compromis/quarantin/hijack/infected/malicious, `agents`, `agent_ids`), und in Listen auch Objekte über ihr `agent`/`agent_id`/`id`-Feld. Stand-ins, Tokens, Domains, Freitext bleiben.
 - rejected: Filter auch ohne Router-`agent_evidence` (würde Rechte-/Access-Listen wie t25 in 1402 zerstören, deren Agents keinen Angriffstrace haben), Rotationen/Blocks an Log-Belege binden (keine Daten, woher erwartete Blocks belegt werden → Risiko, legitime Containment-Tasks zu brechen)
