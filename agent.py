@@ -307,6 +307,8 @@ class Config:
     task_cost_cap: float = 0.05     # one task never spends more than this before it has to submit
     direct_submit: bool = True      # a complete computed answer to a result-only task is submitted without a model call
     preload_facts: bool = True      # incident questions get the fact sheet with the task instead of asking for it
+    preload_tables: bool = True     # action tasks get the small tables the rule files name with the task
+    plain_rules: bool = True        # root rule files without line numbers (never cited)
     route: bool = True              # one small model call per task: which kinds of action does the task ask for?
 
 
@@ -557,10 +559,32 @@ def _solve(client: ArenaClient, run_id: str, task: Task, tool_specs: list[ToolSp
     for path, kind, text in pre:
         if kind == "ticket" and not delegated:
             continue  # a ticket is part of the instruction only when the instruction says so
-        messages[1]["content"] += f"\n\n=== {labels[kind]} {path} ===\n{text}"
+        # Root rule files are never an expected citation (0 of 336 revealed dev tasks): they go without line numbers
+        # and blank lines, ~400 tokens less on every call. Files they name and tickets keep their numbers.
+        shown = re.sub(r"\n{2,}", "\n", re.sub(r"(?m)^\d+\| ?", "", text)) if kind == "rule" and cfg.plain_rules else text
+        messages[1]["content"] += f"\n\n=== {labels[kind]} {path} ===\n{shown}"
         evidence.add_tool("read", {"path": path}, {"text": text})
         in_context.add("read" + json.dumps({"path": path}, sort_keys=True))
     computed: list[tuple[Any, list]] = []  # complete answers computed in code before the first model call
+    # Action tasks look up the same small tables the rule files name (roster, contacts, tokens) with 1-4 calls of
+    # ~10k tokens each (run_7YkAuXC_t0cU: 20 of 134 calls); they come with the task instead.
+    if cfg.preload_tables and policy.allowed:
+        rule_text = "".join(x[2] for x in pre if x[1] in ("rule", "named"))
+        budget_chars = 4500
+        for p in dict.fromkeys(re.findall(r"/[\w./-]+\.csv\b", rule_text) + sorted(x for x in paths or () if x.lower().endswith(".csv"))):
+            if p not in (paths or ()) or re.search(r"/logs?/|/reports?/", p):
+                continue
+            try:
+                raw = client.download_file(run_id, task.task_id, p)[0]
+            except Exception:  # noqa: BLE001
+                continue
+            if len(raw) > 2500 or len(raw) > budget_chars:
+                continue
+            budget_chars -= len(raw)
+            t = "\n".join(f"{i}| {l}" for i, l in enumerate(raw.decode("utf-8-sig", "replace").splitlines(), 1))
+            messages[1]["content"] += f"\n\n=== TABLE NAMED IN THE RULES {p} (complete; cite rows by record id) ===\n{t}"
+            evidence.add_tool("read", {"path": p}, {"text": t})
+            in_context.add("read" + json.dumps({"path": p}, sort_keys=True))
     ambiguous = _ambiguous_reference(policy.authorised_text or "", client, run_id, task.task_id, paths) if policy.allowed else None
     if ambiguous:
         messages[1]["content"] += (f"\n\nNOTE (computed from the roster): the request refers to an agent as {ambiguous[0]!r}, which matches "
@@ -639,6 +663,30 @@ def _solve(client: ArenaClient, run_id: str, task: Task, tool_specs: list[ToolSp
             if ids:
                 computed.append((sorted(ids), []))
         trace({"event": "tool", "name": "leak_check", "args": {}, "output": expl, "local": True, "preloaded": True})
+    # Board triage is decided post by post in code (Jev); a question that only asks which posts are injected gets that
+    # list as its answer, each id cited by its board line (run_vgw01u5R4u-J t10: the model passed the list on, sources 4/14).
+    _bt = policy.authorised_text or task.instruction
+    if cfg.direct_submit and not computed and not policy.allowed and re.search(r"\bboard\b", _bt, re.I) \
+            and re.search(r"\bposts\b|message ids?\b|board triage", _bt, re.I) and re.search(r"inject|instruct|tell|ask", _bt, re.I) \
+            and not re.search(r"chronolog|earliest|\border\b", _bt, re.I):
+        try:
+            bt = _board_triage(client, run_id, task.task_id, {}, evidence, tracker)
+        except Exception as e:  # noqa: BLE001
+            bt = f"ERROR: {e}"
+        m_bt = re.search(r"^(/\S+): \d+ candidate posts checked one by one;[^\[\n]*(\[.*\])\s*$", bt.split("\n", 1)[0])
+        if m_bt:
+            messages[1]["content"] += "\n\n=== COMPUTED: board_triage (already called for you) ===\n" + bt
+            local_seen.add("board_triage{}")
+            local_out["board_triage{}"] = bt
+            try:
+                b_ids = json.loads(m_bt.group(2))
+            except ValueError:
+                b_ids = []
+            b_cites = [{"path": m_bt.group(1), "line": int(n)} for i, n in re.findall(r"^- (\S+) line (\d+)", bt, re.M) if i in b_ids]
+            if b_ids and len(b_cites) == len(b_ids):
+                evidence.must_cite = b_cites
+                computed.append((b_ids, b_cites))
+        trace({"event": "tool", "name": "board_triage", "args": {}, "output": bt, "local": True, "preloaded": True})
     # The fact sheet up front for incident questions: `incident_facts {}` was the model's first call in a third of all
     # tasks (run_QfHOqhRM75Om, run_vgw01u5R4u-J: 32 of 96), one full call each just to ask for it.
     _text = policy.authorised_text or task.instruction
@@ -1006,9 +1054,12 @@ PLATFORM_TOPICS = {
 }
 
 
-FACTS_TOPIC = (r"incident|compromis|patient zero|exfiltrat|canar|honeytoken|attacker|contain|quarantin|exposed|entry (point|artifact)"
-               r"|chronolog|earliest (first|to latest)")
-FACTS_OTHER = r"board|manifest|\bmcp\b|access[- ]review|access requests?|agreement|leak check"  # helpers of their own
+FACTS_TOPIC = (r"\bINC-|incident(?! response ticket)|compromis|patient zero|exfiltrat|canar|honeytoken|attacker|quarantin|exposed"
+               r"|entry (point|artifact)|chronolog|earliest (first|to latest)")
+# Subjects with helpers of their own: there the fact sheet is not wanted, and loading it would arm the answer filter
+# for agent ids (run on seed 112309987, t02: a trifecta list cut from 8 agents to 1, score 0.13).
+FACTS_OTHER = (r"board triage|\bposts\b|message ids?\b|manifest|\bmcp\b|access[- ]review|access requests?|agreement|leak check"
+               r"|trifecta|capabilit|permission|\bscopes?\b|registry|delegation chain|rotat|calendar|access[- ]log|requests?\.csv")
 
 
 def _special_tools(text: str) -> list[dict]:
