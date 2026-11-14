@@ -68,10 +68,10 @@ c = Client()
 out = run(lambda *a, **k: {"content": "thinking"}, c, steps=25)
 assert c.submits == DEFAULT, c.submits
 
-# 3. step limit, and the forced last call is not a submit: default
+# 3. step limit, and the forced last call is not a submit: default. The repeated read is answered locally.
 c = Client()
 out = run(lambda *a, **k: call("read", {"path": "/a"}), c, steps=2)
-assert c.submits == DEFAULT and c.tools == ["read", "read"], (c.submits, c.tools)
+assert c.submits == DEFAULT and c.tools == ["read"], (c.submits, c.tools)
 
 # 4. the model's submit was rejected (400) and then the model dies: best interim state = that answer without sources
 state = {"n": 0}
@@ -109,6 +109,11 @@ assert c.submits == [("OK", 1, [])] and seen == [{"type": "function", "function"
 c = Client()
 out = run(raises(AssertionError("no model call after the deadline")), c, deadline=time.time() - 100)
 assert c.submits == DEFAULT and "deadline" in out["fallback"], (c.submits, out)
+
+# 6c. UNSUPPORTED never carries an answer (the baseline submitted the string "UNSUPPORTED")
+c = Client()
+run(lambda *a, **k: call("submit", {"outcome": "UNSUPPORTED", "answer": "UNSUPPORTED", "sources": []}), c)
+assert c.submits == DEFAULT, c.submits
 
 # 7. end to end: main.py against the mock Task API without an OpenRouter key -> both mock tasks are submitted
 srv = ThreadingHTTPServer(("127.0.0.1", 0), mock_server.H)

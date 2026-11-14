@@ -13,7 +13,8 @@ assert parse_args('```json\n{"a": 1}\n```') == {"a": 1}
 assert parse_args(None) == {}
 assert normalize_answer('["S-1"]') == ["S-1"] and normalize_answer("42") == 42 and normalize_answer("B7") == "B7"
 msgs = [{"role": "tool", "content": "x" * 1000, "tool_call_id": str(i)} for i in range(8)]
-t = trim_history(msgs, Config(keep_full_outputs=2))
+t = trim_history(msgs, Config(keep_full_outputs=2, keep_small_chars=0))
+assert len(trim_history(msgs, Config(keep_full_outputs=2))[0]["content"]) == 1000  # small outputs stay
 assert len(t[0]["content"]) < 400 and len(t[-1]["content"]) == 1000
 tl = to_openai_tools([ToolSpec(name="read", description="d", args={"path": "file", "page": "optional page"})])
 assert tl[0]["function"]["parameters"]["required"] == ["path"]

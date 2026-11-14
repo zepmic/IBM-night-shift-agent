@@ -23,7 +23,7 @@ LOCATOR_KEYS = ("line", "record", "page", "paragraph", "sheet", "row")
 
 _NUMBERED = re.compile(r"^\s*(\d+)\s*[:|\t]\s?(.*)$")
 _HIT = re.compile(r"^(/[^\s:]+):(\d+)(?::\s?(.*))?$", re.S)
-_ID_FIELD = re.compile(r'"id"\s*:\s*"?([^",}\s]+)')
+_DATE_LIKE = re.compile(r"\d{1,4}[.\-/:]\d")
 
 
 def norm_path(p: Any) -> str:
@@ -63,6 +63,7 @@ class Evidence:
     def __init__(self) -> None:
         self.items: dict[tuple, dict] = {}   # key -> {"source": {...}, "text": str}
         self.paths: set[str] = set()         # files opened or named with a line by a tool
+        self.csv_ids: dict[str, bool] = {}   # csv path -> its first column is a record id (header seen)
 
     # --- recording ----------------------------------------------------------------------------------------------
     def _add(self, path: str, text: str, **loc: Any) -> None:
@@ -85,8 +86,8 @@ class Evidence:
 
     def _add_read(self, path: str, result: Any, start: int, max_chars: int) -> None:
         lines = _numbered_lines(result, start)
+        path = norm_path(path)
         low = path.lower()
-        cur_id = None
         used = 0
         for n, text in lines:
             used += len(text) + 1
@@ -94,25 +95,17 @@ class Evidence:
                 break
             if not text.strip():
                 continue
-            if low.endswith(".csv"):
-                if n == 1:  # header row
-                    continue
-                first = text.split(",", 1)[0].strip().strip('"')
-                self._add(path, text, record=first or None)
-            elif low.endswith(".json"):
-                ids = _ID_FIELD.findall(text)
-                if len(ids) == 1:
-                    cur_id = ids[0]
-                self._add(path, text, record=cur_id if len(ids) <= 1 else None, _line=n)
-            else:
-                self._add(path, text, line=n)
+            if n == 1 and low.endswith(".csv"):  # header row: is the first column a record id?
+                self.csv_ids[path] = re.fullmatch(r"(\w*_)?id", text.split(",", 1)[0].strip().strip('"').lower()) is not None
+                continue
+            self._add_line(path, n, text, text)
 
     def _walk(self, v: Any) -> None:
         if isinstance(v, dict):
             p = v.get("path") if isinstance(v.get("path"), str) else v.get("file") if isinstance(v.get("file"), str) else None
             n = _int(v.get("line"))
             if p and p.startswith("/") and n:
-                self._add_line_hit(p, n, json.dumps(v, ensure_ascii=False))
+                self._add_line(p, n, json.dumps(v, ensure_ascii=False), v.get("text") if isinstance(v.get("text"), str) else None)
             for x in v.values():
                 if isinstance(x, (dict, list)):
                     self._walk(x)
@@ -122,18 +115,30 @@ class Evidence:
         elif isinstance(v, str):
             m = _HIT.match(v)
             if m:
-                self._add_line_hit(m.group(1), int(m.group(2)), m.group(3) or "")
+                self._add_line(m.group(1), int(m.group(2)), m.group(3) or "", m.group(3))
 
-    def _add_line_hit(self, path: str, n: int, text: str) -> None:
+    def _add_line(self, path: str, n: int, text: str, raw: str | None) -> None:
+        """One line of a text file, with the locator the Task API wants for its type: csv tables -> `record` (the id
+        in the first column), .json -> the file alone, everything else (markdown, text, jsonl, log archives) -> `line`.
+        `raw` is the line itself when the tool gave it (a log event from query_logs has none)."""
+        path = norm_path(path)
         low = path.lower()
-        if low.endswith(".csv"):
-            first = text.split(",", 1)[0].strip().strip('"')
-            self._add(path, text, record=first or None)
-        elif low.endswith(".json"):
-            ids = _ID_FIELD.findall(text)
-            self._add(path, text, record=ids[0] if len(ids) == 1 else None, _line=n)
-        else:
-            self._add(path, text, line=n)
+        if low.endswith(".json"):
+            return self._add(path, text, _line=n)
+        if low.endswith(".csv") and raw is not None:
+            first = raw.split(",", 1)[0].strip().strip('"')
+            # header unseen: a first column that looks like a date/time is a log row, cited by line
+            if first and self.csv_ids.get(path, not _DATE_LIKE.match(first)):
+                return self._add(path, text, record=first, _line=n)
+        self._add(path, text, line=n)
+
+    def record_at(self, path: str, line: int) -> str | None:
+        """The record id of a csv line the agent has seen."""
+        for it in self.items.values():
+            s = it["source"]
+            if s["path"] == path and s.get("_line") == line and s.get("record"):
+                return s["record"]
+        return None
 
     def add_extraction(self, path: str, text: str) -> None:
         """Output of the harness's own download_file parser (formats defined in agent.py)."""
@@ -176,9 +181,7 @@ class Evidence:
                 exact = [s for s in srcs if str(s.get("record", "")).casefold() == value.casefold()]
                 srcs = _merge_near(exact or srcs)
                 if len(srcs) > MAX_PER_FILE:
-                    if not path.lower().endswith(".json"):
-                        continue
-                    srcs = [{"path": path}]  # a registry/export that is full of the value: cite the file, not a guess
+                    continue
                 for s in srcs:
                     s = {k: v for k, v in s.items() if not k.startswith("_")}
                     if not any(_same(s, c) for c in cited + added):
@@ -263,7 +266,15 @@ def finalize(model_sources: list[dict], answer: Any, evidence: Evidence, existin
     kept, dropped = [], []
     for s in model_sources:
         s = {**s, "path": norm_path(s["path"])}
-        if existing is not None and s["path"] not in existing:
+        low = s["path"].lower()
+        if low.endswith(".json"):  # cited as a whole file
+            s = {"path": s["path"]}
+        elif low.endswith(".csv") and "record" not in s and "line" in s:
+            rec = evidence.record_at(s["path"], s["line"])  # the model cites tables by line; the grader wants the id
+            if rec:
+                s = {"path": s["path"], "record": rec}
+        # /AGENTS.md is the rule book of every workspace, not evidence; citing it only counts as a stray citation
+        if (existing is not None and s["path"] not in existing) or s["path"] == "/AGENTS.md":
             dropped.append(s)
         elif s not in kept:
             kept.append(s)

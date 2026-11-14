@@ -37,7 +37,7 @@ ev.add_tool("search", {"pattern": "agent-03"}, ["/fleet/registry_export.json:31:
 ev.add_tool("read", {"path": "/fleet/tokens.csv"}, "1: id,owner\n2: TOK-9,agent-03\n3: TOK-7,agent-11")
 got = ev.candidates(["agent-03"], [{"path": "/logs/audit/a.jsonl", "line": 40}], max_add=9)
 assert got == [{"path": "/fleet/changes.md", "line": 7}, {"path": "/fleet/changes.md", "line": 12},
-               {"path": "/fleet/registry_export.json", "record": "agent-03"}, {"path": "/fleet/tokens.csv", "record": "TOK-9"}], got
+               {"path": "/fleet/registry_export.json"}, {"path": "/fleet/tokens.csv", "record": "TOK-9"}], got
 assert len(ev.candidates(["agent-03"], [], max_add=2)) == 2
 # already cited within ±2 lines: not added again; numbers and words in the answer add nothing
 assert {"path": "/fleet/changes.md", "line": 7} not in ev.candidates(["agent-03"], [{"path": "/fleet/changes.md", "line": 8}])
@@ -46,6 +46,25 @@ assert ev.candidates({"count": 4, "status": "compromised"}, []) == []
 ev2 = S.Evidence()
 ev2.add_tool("read", {"path": "/fleet/reg.json"}, "\n".join(f'{i}: {{"from": "agent-03", "to": "x{i}"}}' for i in range(1, 6)))
 assert ev2.candidates(["agent-03"], []) == [{"path": "/fleet/reg.json"}]
+
+# the platform's real result shapes (dev run): read = {text: " 1| …"}, search = {hits: [{path, line, text}]},
+# query_logs = {events: [{file, line, …}]}. Tables with an id column are cited by record, log archives by line.
+ev3 = S.Evidence()
+ev3.add_tool("read", {"path": "/fleet/fp.csv"}, {"path": "/fleet/fp.csv", "kind": "csv", "start_line": 1,
+             "text": "1| token_id,first4\n2| TOK-A-1,aaaa\n3| TOK-B-2,bbbb"})
+ev3.add_tool("search", {"pattern": "K-15"}, {"hits": [{"path": "/contacts.csv", "line": 16, "text": "K-15,Mateo,x@y.example"}]})
+ev3.add_tool("query_logs", {}, {"events": [{"file": "/logs/archive/d.csv", "line": 77, "agent": "ops-01", "target": "TOK-B-2"}]})
+ev3.add_tool("read", {"path": "/logs/archive/d.csv", "start_line": 1}, {"text": "1| time_local,agent\n2| 13.11.2026 01:00:01,ops-09"})
+assert ev3.candidates(["TOK-B-2", "x@y.example", "ops-09"], [], max_add=9) == [
+    {"path": "/fleet/fp.csv", "record": "TOK-B-2"}, {"path": "/logs/archive/d.csv", "line": 77},
+    {"path": "/contacts.csv", "record": "K-15"}, {"path": "/logs/archive/d.csv", "line": 2}], ev3.candidates(["TOK-B-2", "x@y.example", "ops-09"], [], max_add=9)
+# the model's own citations: csv line -> record, json -> the file, the rule book is no evidence
+out, rep = S.finalize([{"path": "/fleet/fp.csv", "line": 2}, {"path": "/fleet/fp.csv", "line": 9}, {"path": "/logs/archive/d.csv", "line": 77},
+                       {"path": "/fleet/reg.json", "line": 4}, {"path": "/fleet/reg.json", "record": "x"}, {"path": "/AGENTS.md", "line": 19}],
+                      None, ev3, None)
+assert out == [{"path": "/fleet/fp.csv", "record": "TOK-A-1"}, {"path": "/fleet/fp.csv", "line": 9}, {"path": "/logs/archive/d.csv", "line": 77},
+               {"path": "/fleet/reg.json"}], out
+assert rep["dropped"] == [{"path": "/AGENTS.md", "line": 19}]
 
 # download_file extractions
 ev = S.Evidence()
