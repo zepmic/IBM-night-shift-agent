@@ -184,8 +184,8 @@ assert _agent._filter_rows(_fc, "r", "t", {"path": "/nope.csv"}, _ev, 8000).star
 assert _agent._sha256({"values": ["abc"]}).endswith(hashlib.sha256(b"abc").hexdigest()) and _agent._sha256({}).startswith("ERROR")
 
 _pre = _agent._preload(_fc, "r", "t", set(_Files.FILES))
-assert [(p, l.split(" (")[0]) for p, l, _ in _pre] == [("/AGENTS.md", "OPERATOR FILE"), ("/runbook.md", "OPERATOR FILE"),
-    ("/fleet/changes.md", "FILE NAMED IN THE RULES"), ("/tickets/IR-2.md", "OPEN TICKET")], _pre   # closed ticket: history, not sent
+assert [(p, k) for p, k, _ in _pre] == [("/AGENTS.md", "rule"), ("/runbook.md", "rule"), ("/fleet/changes.md", "named"),
+                                        ("/tickets/IR-2.md", "ticket")], _pre   # closed ticket: history, not sent
 assert _pre[1][2] == "1| # Runbook\n2| rule 1" and _agent._preload(_fc, "r", "t", None) == [] and _agent._preload(_fc, "r", "t", {"/x.md"}) == []
 
 _r = _agent.render({"total": 2, "events": [{"file": "/l.jsonl", "line": 3, "agent": "a", "detail": 'say "hi"\nnow'}, {"file": "/l.jsonl", "line": 9, "agent": "b"}]})

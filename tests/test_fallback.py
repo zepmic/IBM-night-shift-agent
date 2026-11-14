@@ -15,7 +15,7 @@ sys.path.insert(0, str(KIT / "tests"))
 import agent  # noqa: E402
 import mock_server  # noqa: E402
 from arena import llm  # noqa: E402
-from arena.client import ArenaError, Task  # noqa: E402
+from arena.client import ArenaError, Task, ToolSpec  # noqa: E402
 
 
 class Client:
@@ -39,7 +39,8 @@ def run(chat, client, steps=3, deadline=None):
     real = agent.llm.chat
     agent.llm.chat = chat
     try:
-        return agent.solve_task(client, "r", Task(task_id="t01", instruction="x"), [], agent.Config(max_steps=steps, deadline=deadline),
+        return agent.solve_task(client, "r", Task(task_id="t01", instruction="x"), [ToolSpec(name="read", args={"path": "file"})],
+                                agent.Config(max_steps=steps, deadline=deadline),
                                 llm.CostTracker())
     finally:
         agent.llm.chat = real

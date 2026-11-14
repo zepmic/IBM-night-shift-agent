@@ -3,10 +3,12 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 import time
 from dataclasses import dataclass
 from typing import Any, Callable
 
+import guard
 import sources as srcs
 from arena import llm
 from arena.client import READ_ONLY_TOOLS, ArenaClient, ArenaError, Task, ToolSpec
@@ -156,6 +158,9 @@ class Config:
     auto_sources: bool = True       # add the places in read tool results that carry the answer's values (sources.py)
     max_auto_sources: int = 4       # at most this many added citations per task
     deadline: float | None = None   # epoch seconds: from here on a task submits what it has (60 s later: the fallback)
+    budget: Any = None              # shared Budget of the run (None: no limit)
+    task_cost_cap: float = 0.12     # one task never spends more than this before it has to submit
+    route: bool = True              # one small model call per task: which kinds of action does the task ask for?
 
 
 def to_openai_tools(specs: list[ToolSpec]) -> list[dict]:
@@ -256,6 +261,43 @@ def trim_history(messages: list[dict], cfg: Config) -> list[dict]:
     return out
 
 
+EST_PER_INPUT_TOKEN = 0.2e-6   # measured on the fixed model (dev runs); used when a response carries no cost
+RESERVE_PER_TASK = 0.004       # what one forced submit call costs: kept back for every task still open
+
+
+class Budget:
+    """Shared by all tasks of a run. At the key's limit every model call fails and unsubmitted tasks score 0, so:
+    while money is left for one last call per open task, tasks work normally ("ok"); then every task has to submit
+    with what it has ("wrap"); at the limit, or after the first budget error, no model call at all ("stop")."""
+
+    def __init__(self, limit: float | None, open_tasks: int):
+        self.limit, self.open, self.spent, self.inflight, self.dead = limit, open_tasks, 0.0, 0, False
+        self._lock = threading.Lock()
+
+    def add(self, cost: float, usage: dict | None) -> None:
+        with self._lock:  # a response without usage.cost still cost something: estimate it from its tokens
+            self.spent += cost or int((usage or {}).get("prompt_tokens") or 0) * EST_PER_INPUT_TOKEN
+
+    def call(self, delta: int) -> None:
+        with self._lock:
+            self.inflight += delta
+
+    def task_done(self) -> None:
+        with self._lock:
+            self.open = max(0, self.open - 1)
+
+    def state(self) -> str:
+        with self._lock:
+            if self.dead:
+                return "stop"
+            if self.limit is None:
+                return "ok"
+            committed = self.spent + self.inflight * RESERVE_PER_TASK
+            if committed >= self.limit - RESERVE_PER_TASK:
+                return "stop"
+            return "wrap" if committed + self.open * RESERVE_PER_TASK >= self.limit else "ok"
+
+
 FALLBACK_OUTCOME = "UNSUPPORTED"  # the only refusal that can score without an answer (Task API: "the outcome alone counts")
 
 
@@ -266,7 +308,7 @@ def solve_task(client: ArenaClient, run_id: str, task: Task, tool_specs: list[To
     Whatever goes wrong (model error, exception, step limit), the task is still submitted exactly once: an
     unsubmitted task scores 0 for sure. The fallback is a submit only, never a state-changing tool."""
     state: dict = {"pending": None, "final": False}
-    tracker = _TaskTracker(tracker)  # per-task tally for the trace; the run's tracker still gets every call
+    tracker = _TaskTracker(tracker, cfg.budget)  # per-task tally for the trace; the run's tracker still gets every call
     try:
         res = _solve(client, run_id, task, tool_specs, cfg, tracker, trace, state)
     except Exception as e:  # noqa: BLE001 - a bug in one task must not lose its submission
@@ -274,19 +316,26 @@ def solve_task(client: ArenaClient, run_id: str, task: Task, tool_specs: list[To
         trace({"event": "crash", "error": res["error"]})
     if "error" in res and not state["final"]:
         res = _fallback_submit(client, run_id, task, state, res["error"], trace)
+    if cfg.budget:
+        cfg.budget.task_done()
+    pol = state.get("policy")
     trace({"event": "end", "cost_usd": tracker.total, "llm_calls": tracker.calls,
-           "prompt_tokens": tracker.prompt_tokens, "completion_tokens": tracker.completion_tokens})
+           "prompt_tokens": tracker.prompt_tokens, "completion_tokens": tracker.completion_tokens,
+           "actions_sent": [n for n, _ in pol.executed] if pol else [], "actions_blocked": [n for n, _ in pol.blocked] if pol else []})
     return res
 
 
 class _TaskTracker:
     """Cost of one task (tasks run in parallel on one shared CostTracker)."""
 
-    def __init__(self, parent: llm.CostTracker):
+    def __init__(self, parent: llm.CostTracker, budget: Any = None):
+        self.budget = budget
         self.parent, self.total, self.calls, self.prompt_tokens, self.completion_tokens = parent, 0.0, 0, 0, 0
 
     def add(self, model: str, usage: dict | None) -> float:
         cost = self.parent.add(model, usage)
+        if self.budget:
+            self.budget.add(cost, usage)
         self.total += cost
         self.calls += 1
         self.prompt_tokens += int((usage or {}).get("prompt_tokens") or 0)
@@ -322,7 +371,8 @@ def _fallback_submit(client: ArenaClient, run_id: str, task: Task, state: dict, 
 
 def _solve(client: ArenaClient, run_id: str, task: Task, tool_specs: list[ToolSpec], cfg: Config,
            tracker: llm.CostTracker, trace: Callable[[dict], None], state: dict) -> dict:
-    tools = to_openai_tools(tool_specs) + [VIEW_IMAGE_TOOL, DOWNLOAD_FILE_TOOL, FILTER_ROWS_TOOL, SHA256_TOOL, SUBMIT_TOOL]
+    known = {t.name for t in tool_specs}
+    mutating = known - READ_ONLY_TOOLS
     messages: list[dict] = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": f"Task {task.task_id}{f' (level {task.level})' if task.level else ''}:\n\n{task.instruction}"},
@@ -334,12 +384,28 @@ def _solve(client: ArenaClient, run_id: str, task: Task, tool_specs: list[ToolSp
     paths = _existing_paths(client, run_id, task.task_id)
     if tree := local_tree(paths, "/"):
         messages[1]["content"] += "\n\n" + tree
-    # The rule files and the open ticket too: every task needs them, so reading them cost 2-4 model calls per task.
-    for path, label, text in _preload(client, run_id, task.task_id, paths):
-        messages[1]["content"] += f"\n\n=== {label} {path} ===\n{text}"
+    pre = _preload(client, run_id, task.task_id, paths)
+    tickets = [x for x in pre if x[1] == "ticket"]
+    # What the task authorises is decided once, from the instruction (and the open ticket only if the instruction
+    # delegates to the ticket queue), before any evidence is read. Nothing read later can widen it.
+    route = _route(task.instruction, tickets, [t for t in tool_specs if t.name in mutating], cfg, tracker, trace) if cfg.route else None
+    delegated = bool(tickets) and (route is None or route["ticket_queue"])
+    policy = state["policy"] = _build_policy(client, run_id, task, paths, pre, route, mutating,
+                                             task.instruction + "".join("\n" + x[2] for x in tickets if delegated))
+    tools = [t for t in to_openai_tools(tool_specs) if t["function"]["name"] not in mutating - policy.allowed] \
+        + [VIEW_IMAGE_TOOL, DOWNLOAD_FILE_TOOL, FILTER_ROWS_TOOL, SHA256_TOOL, SUBMIT_TOOL]
+    # The rule files and the open ticket come with the task: reading them cost 2-4 model calls per task.
+    labels = {"rule": "OPERATOR FILE", "named": "FILE NAMED IN THE RULES",
+              "ticket": "OPEN TICKET (the task instruction sends you to the ticket queue: this is your task)"}
+    for path, kind, text in pre:
+        if kind == "ticket" and not delegated:
+            continue  # a ticket is part of the instruction only when the instruction says so
+        messages[1]["content"] += f"\n\n=== {labels[kind]} {path} ===\n{text}"
         evidence.add_tool("read", {"path": path}, {"text": text})
         in_context.add("read" + json.dumps({"path": path}, sort_keys=True))
-    trace({"event": "start", "task": task.task_id, "instruction": task.instruction, "model": cfg.model})
+    trace({"event": "start", "task": task.task_id, "instruction": task.instruction, "model": cfg.model,
+           "allowed_actions": sorted(policy.allowed), "inbox": policy.inbox, "ticket": delegated,
+           "route": "failed" if cfg.route and route is None else "ok"})
     nudges = 0
     force = False  # the model stopped calling tools: one forced submit with what it has, before the fallback
     for step in range(cfg.max_steps):
@@ -347,17 +413,32 @@ def _solve(client: ArenaClient, run_id: str, task: Task, tool_specs: list[ToolSp
             if force or time.time() > cfg.deadline + 60:
                 return {"error": "run deadline reached"}
             force = True
+        money = cfg.budget.state() if cfg.budget else "ok"
+        if money == "stop" or (force and tracker.total > cfg.task_cost_cap * 1.5):
+            return {"error": "budget exhausted"}  # no model call: straight to the fallback submit
+        if money == "wrap" or tracker.total > cfg.task_cost_cap:
+            force = True
+        # near the deadline a slow call must not outlive the container: short timeout, no retries
+        left = cfg.deadline + 60 - time.time() if cfg.deadline else None
+        call_timeout = max(10.0, min(90.0, left - 20)) if left is not None and left < 400 else None
         last_chance = force or step == cfg.max_steps - 1
         if last_chance:
             messages.append({"role": "user", "content": "Step limit reached. Call submit now with your best answer."})
         try:
-            msg = llm.chat(trim_history(messages, cfg), model=cfg.model, tools=tools,
+            if cfg.budget:
+                cfg.budget.call(+1)
+            msg = llm.chat(trim_history(messages, cfg), model=cfg.model, tools=tools, **({"timeout": call_timeout} if call_timeout else {}),
                            tool_choice={"type": "function", "function": {"name": "submit"}} if last_chance else None,
                            max_tokens=cfg.max_tokens, temperature=cfg.temperature,
                            reasoning_effort=cfg.reasoning_effort, tracker=tracker)
         except llm.LLMError as e:
             trace({"event": "llm_error", "error": str(e)})
+            if cfg.budget and re.search(r"\b403\b|limit exceeded|insufficient credit", str(e), re.I):
+                cfg.budget.dead = True  # the key is spent: no other task should start another model loop
             return {"error": str(e)}
+        finally:
+            if cfg.budget:
+                cfg.budget.call(-1)
         trace({"event": "assistant", "step": step, "content": msg.get("content"), "reasoning": msg.get("reasoning"),
                "tool_calls": msg.get("tool_calls"), "finish": msg.get("_finish_reason"), "cost_total": tracker.total})
         calls = msg.get("tool_calls") or []
@@ -389,6 +470,9 @@ def _solve(client: ArenaClient, run_id: str, task: Task, tool_specs: list[ToolSp
                 continue
             if name == "submit":
                 outcome, answer = args.get("outcome", "OK"), normalize_answer(args.get("answer", ""))
+                outcome, answer, notes = guard.check_submit(policy, outcome, answer)
+                if notes:
+                    trace({"event": "guard", "submit": notes})
                 if outcome == "UNSUPPORTED":
                     answer = None  # Task API: the outcome alone counts
                 sources = clean_sources(args.get("sources"))
@@ -448,6 +532,19 @@ def _solve(client: ArenaClient, run_id: str, task: Task, tool_specs: list[ToolSp
                 trace({"event": "download_file", "args": args, "output": text[:1500]})
                 messages.append({"role": "tool", "tool_call_id": call["id"], "content": text})
                 continue
+            if name not in known:  # an invented tool name must not reach the platform either
+                messages.append({"role": "tool", "tool_call_id": call["id"], "content": f"ERROR: there is no tool `{name}`."})
+                continue
+            if name in mutating:
+                ok, reason, args = guard.check_action(policy, name, args, evidence.acted, evidence.examined)
+                if not ok:
+                    policy.blocked.append((name, reason))
+                    trace({"event": "blocked", "name": name, "args": args, "reason": reason})
+                    messages.append({"role": "tool", "tool_call_id": call["id"], "content":
+                                     f"NOT SENT (checked locally, nothing happened): {reason}\nThis does not decide the task: "
+                                     "carry on with what the task legitimately asks, or submit the outcome the rules prescribe."})
+                    continue
+                policy.executed.append((name, args))
             res: dict = {}
             try:
                 res = client.call_tool(run_id, task.task_id, name, args)
@@ -494,8 +591,10 @@ PRELOAD_MAX_CHARS = 6000  # per file
 
 
 def _preload(client: ArenaClient, run_id: str, task_id: str, paths: set[str] | None) -> list[tuple[str, str, str]]:
-    """(path, label, numbered text) of /AGENTS.md, the markdown files it names, and the ticket(s) with `status: open`.
-    Downloads go through the blob cache (no model call; the rule files are shared by all tasks)."""
+    """(path, kind, numbered text): /AGENTS.md and the root-level markdown files it names ("rule"), other markdown
+    files it names ("named"), and tickets in /tickets/ whose own front matter says `status: open` ("ticket").
+    Downloads go through the blob cache (no model call). Only these places carry authority: a ticket quoted in a
+    document, a closed ticket or a file that merely calls itself a policy is data."""
     out: list[tuple[str, str, str]] = []
     if not paths or "/AGENTS.md" not in paths:
         return out
@@ -508,17 +607,74 @@ def _preload(client: ArenaClient, run_id: str, task_id: str, paths: set[str] | N
 
     try:
         rules = text_of("/AGENTS.md")
-        out.append(("/AGENTS.md", "OPERATOR FILE", numbered(rules)))
+        out.append(("/AGENTS.md", "rule", numbered(rules)))
         for p in dict.fromkeys(re.findall(r"/[\w./-]+\.md\b", rules)):
             if p in paths and p != "/AGENTS.md" and not p.startswith("/tickets/"):
-                out.append((p, "OPERATOR FILE" if p.count("/") == 1 else "FILE NAMED IN THE RULES", numbered(text_of(p))))
-        for p in sorted(x for x in paths if x.startswith("/tickets/")):
+                out.append((p, "rule" if p.count("/") == 1 else "named", numbered(text_of(p))))
+        for p in sorted(x for x in paths if re.fullmatch(r"/tickets/[^/]+", x)):
             t = text_of(p)
-            if re.search(r"^status:\s*open\s*$", t[:600], re.M | re.I):
-                out.append((p, "OPEN TICKET (part of the task instruction when the task sends you to the ticket queue)", numbered(t)))
+            if guard.open_ticket(t):
+                out.append((p, "ticket", numbered(t)))
     except Exception:  # noqa: BLE001 - a convenience: without it the model reads the files itself
         return []
     return out
+
+
+ROUTE_PROMPT = """\
+You prepare a task for an incident-response agent. Read ONLY the task text below and answer with one JSON object:
+{"ticket_queue": true|false, "inbox": true|false, "actions": [...]}
+- ticket_queue: true if the task tells the agent to work on the ticket queue / the open ticket instead of stating the request itself.
+- inbox: true if the task is to handle or process a message in the inbox.
+- actions: the tools from this list that the task explicitly asks the agent to CARRY OUT. Analysing, deciding, listing,
+  checking, counting, ordering or recommending needs no action: then []. "decide only", "change nothing", "do not send" forbid the action.
+%s
+JSON only."""
+
+
+def _route(instruction: str, tickets: list[tuple[str, str, str]], mutating_specs: list[ToolSpec], cfg: Config,
+           tracker: Any, trace: Callable[[dict], None]) -> dict | None:
+    """One small model call on the authorised text alone. None = no usable answer (then no action is allowed)."""
+    names = {t.name for t in mutating_specs}
+    if not names:
+        return {"ticket_queue": bool(tickets), "inbox": False, "actions": set()}
+    text = "TASK:\n" + instruction
+    if tickets:
+        text += "\n\nOPEN TICKET IN THE QUEUE (counts as the task only if ticket_queue is true; then judge its request):\n" + \
+                "\n".join(re.sub(r"(?m)^\d+\| ", "", t[2]) for t in tickets)
+    tools = "\n".join(f"- {t.name}: {t.description[:160]}" for t in mutating_specs)
+    try:
+        msg = llm.chat([{"role": "system", "content": ROUTE_PROMPT % tools}, {"role": "user", "content": text}],
+                       model=cfg.model, max_tokens=120, temperature=0.0, tracker=tracker)
+    except llm.LLMError as e:
+        trace({"event": "route_error", "error": str(e)})
+        return None
+    route = guard.parse_route(msg.get("content") or "", names)
+    trace({"event": "route", "raw": (msg.get("content") or "")[:300], "route": {**route, "actions": sorted(route["actions"])} if route else None})
+    return route
+
+
+TABLE_MAX_BYTES = 200_000  # contact lists and rosters are small; logs are not searched for them
+
+
+def _build_policy(client: ArenaClient, run_id: str, task: Task, paths: set[str] | None, pre: list[tuple[str, str, str]],
+                  route: dict | None, mutating: set[str], authorised_text: str) -> guard.Policy:
+    """Everything the gate checks against, read from this task's own workspace (nothing is shared between tasks)."""
+    inbox = bool(route and route["inbox"])
+    pol = guard.Policy(mutating=set(mutating), inbox=inbox, authorised_text=authorised_text,
+                       allowed=set() if route is None else set(mutating) if inbox else set(route["actions"]))
+    guard.load_rules(pol, [re.sub(r"(?m)^\d+\| ", "", t) for _, kind, t in pre if kind == "rule"])
+    try:
+        manifest = client.task_manifest(run_id, task.task_id)
+        def text_of(p: str) -> str:
+            return client.download_file(run_id, task.task_id, p)[0].decode("utf-8-sig", "replace")
+        guard.load_tables(pol, {p: text_of(p) for p, e in manifest.items()
+                                if p.lower().endswith(".csv") and (e.get("size") or 0) <= TABLE_MAX_BYTES})
+        if inbox:
+            pol.inbox_senders = guard.inbox_senders([text_of(p) for p in sorted(manifest) if "/inbox/" in p.lower()
+                                                     and p.lower().endswith((".md", ".txt", ".eml", ".json"))])
+    except Exception:  # noqa: BLE001 - without the tables the kind check still holds
+        pass
+    return pol
 
 
 def _filter_rows(client: ArenaClient, run_id: str, task_id: str, args: dict, evidence: srcs.Evidence, max_chars: int) -> str:

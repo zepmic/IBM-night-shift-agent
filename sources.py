@@ -63,6 +63,8 @@ class Evidence:
     def __init__(self) -> None:
         self.items: dict[tuple, dict] = {}   # key -> {"source": {...}, "text": str}
         self.paths: set[str] = set()         # files opened or named with a line by a tool
+        self.acted: dict[str, set[str]] = {}  # agent -> traces with a non-declined event in a structured log result
+        self.examined: set[str] = set()      # traces the agent queried one by one
 
     # --- recording ----------------------------------------------------------------------------------------------
     def _add(self, path: str, text: str, **loc: Any) -> None:
@@ -76,6 +78,8 @@ class Evidence:
         """A Task API tool result (the `result` of an ok call). Formats differ per tool, so: `read` is parsed as the
         lines of args.path; anything else is searched for {path|file, line} objects and "path:line: text" strings."""
         try:
+            if isinstance(args.get("trace"), str) and args["trace"].strip():
+                self.examined.add(args["trace"].strip())
             if name == "read" and isinstance(args.get("path"), str):
                 self._add_read(args["path"], result, _int(args.get("start_line")) or 1, max_chars)
             else:
@@ -100,6 +104,9 @@ class Evidence:
 
     def _walk(self, v: Any) -> None:
         if isinstance(v, dict):
+            # a log event's own fields (never its free-text detail) say who acted in which trace
+            if isinstance(v.get("agent"), str) and isinstance(v.get("trace"), str) and str(v.get("status", "")).lower() != "declined":
+                self.acted.setdefault(v["agent"], set()).add(v["trace"])
             p = v.get("path") if isinstance(v.get("path"), str) else v.get("file") if isinstance(v.get("file"), str) else None
             n = _int(v.get("line"))
             if p and p.startswith("/") and n:
