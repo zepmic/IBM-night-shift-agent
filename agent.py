@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -117,6 +118,7 @@ class Config:
     jev_inbox_check: bool = False   # example: Jev flags suspicious inbox/report content
     auto_sources: bool = True       # add the places in read tool results that carry the answer's values (sources.py)
     max_auto_sources: int = 4       # at most this many added citations per task
+    deadline: float | None = None   # epoch seconds: from here on a task submits what it has (60 s later: the fallback)
 
 
 def to_openai_tools(specs: list[ToolSpec]) -> list[dict]:
@@ -281,6 +283,10 @@ def _solve(client: ArenaClient, run_id: str, task: Task, tool_specs: list[ToolSp
     nudges = 0
     force = False  # the model stopped calling tools: one forced submit with what it has, before the fallback
     for step in range(cfg.max_steps):
+        if cfg.deadline and time.time() > cfg.deadline:  # an unsubmitted task scores 0 when the container is stopped
+            if force or time.time() > cfg.deadline + 60:
+                return {"error": "run deadline reached"}
+            force = True
         last_chance = force or step == cfg.max_steps - 1
         if last_chance:
             messages.append({"role": "user", "content": "Step limit reached. Call submit now with your best answer."})

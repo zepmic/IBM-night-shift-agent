@@ -13,6 +13,7 @@ import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 from pathlib import Path
 
 from agent import Config, solve_task
@@ -108,9 +109,14 @@ def main() -> int:
         except ArenaError as e:
             print(f"prefetch skipped: {e}")
 
+    # Leave 3 minutes before the platform's deadline (final: 30 min after the run started; dev runs have none).
+    try:
+        deadline = datetime.fromisoformat(run.deadline_at.replace("Z", "+00:00")).timestamp() - 180
+    except (AttributeError, ValueError):
+        deadline = time.time() + 27 * 60 if run.kind == "final" else None
     cfg = Config(model=a.model, max_steps=a.max_steps, max_tokens=a.max_tokens, temperature=a.temperature,
                  reasoning_effort=a.reasoning_effort, jev_inbox_check=a.jev_inbox_check,
-                 auto_sources=not a.no_auto_sources)
+                 auto_sources=not a.no_auto_sources, deadline=deadline)
     tracker = llm.CostTracker()
     out_dir = Path("runs") / run.run_id
     out_dir.mkdir(parents=True, exist_ok=True)

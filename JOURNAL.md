@@ -43,3 +43,9 @@ Format example (ignored: it sits in a code block). Write your entries below it, 
 - why: Baseline t01: Antwort ✓, aber Quellen 1/4 → 0.77 statt 1.0. Ursache: Quellen kamen nur aus dem Gedächtnis des Modells, alte Tool-Outputs werden auf 300 Zeichen gekürzt, `clean_sources` prüft nur Typen. Jetzt führt der Harness jede gelesene Zeile/Record/Seite/Absatz/Zeile-im-Sheet mit und ergänzt beim Submit deterministisch die Stellen, an denen ein ID-artiger Wert der Antwort wörtlich steht – nur wenn er in der Datei höchstens 2× vorkommt (sonst mehrdeutig → nichts), max. 4 Zusätze. Zitate auf Dateien, die es laut Manifest nicht gibt, fliegen raus. Kein LLM-Call, $0.
 - rejected: alle gelesenen Dateien zitieren (Streuzitate werden bestraft), zweiter LLM-Call „welche Quellen?“ (Kosten), Pfade/Dateinamen aus dem Dev-Szenario fest verdrahten (Overfitting, Final hat andere Oberfläche)
 - evidence: tests/test_sources.py (Mock + nachgebauter Baseline-Fall); echter Beleg steht aus → ein Dev-Run mit/ohne `--no-auto-sources` auf gleichem Seed
+
+## 11:00 · Deadline-Schutz und kostenloser End-to-End-Test im Container
+- decided_by: ai
+- why: Im Final wird der Container nach 30 Min gestoppt, niemand kann eingreifen; 25 Schritte × langsame Modell-Calls (p95 9 s, laut FINAL_RUN.md bis 67 s) × 48 Tasks können das reißen. 3 Min vor der Plattform-Deadline bekommt jeder laufende Task einen erzwungenen Submit, 60 s später nur noch den Fallback. Dazu spielt der Mock-Server jetzt ein Modell-Skript (POST /chat/completions), damit die ganze Kette main.py → Task API → Modell → Submit im Image ohne Keys und ohne Netz testbar ist.
+- rejected: fester Zeitbudget-Zähler pro Task (bestraft schwere Tasks, obwohl Zeit nicht gewertet wird), echte Modell-Calls für Container-Tests (Dev-Budget)
+- evidence: tests/test_fallback.py (6b), tests/test_e2e.py lokal und im Image mit `--network none`: 2/2 Mock-Tasks 1.0, ergänzte Quellen im Trace

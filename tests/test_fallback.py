@@ -35,11 +35,11 @@ class Client:
         return {"ok": True, "result": "x"}
 
 
-def run(chat, client, steps=3):
+def run(chat, client, steps=3, deadline=None):
     real = agent.llm.chat
     agent.llm.chat = chat
     try:
-        return agent.solve_task(client, "r", Task(task_id="t01", instruction="x"), [], agent.Config(max_steps=steps),
+        return agent.solve_task(client, "r", Task(task_id="t01", instruction="x"), [], agent.Config(max_steps=steps, deadline=deadline),
                                 llm.CostTracker())
     finally:
         agent.llm.chat = real
@@ -98,6 +98,17 @@ assert len(c.submits) == 1 and "error" in out, (c.submits, out)
 c = Client()
 out = run(lambda *a, **k: call("submit", {"outcome": "OK", "answer": 1, "sources": []}), c)
 assert c.submits == [("OK", 1, [])] and "fallback" not in out
+
+# 6b. run deadline: just past it the model gets one forced submit; a minute later only the fallback, no model call
+import time  # noqa: E402
+
+c, seen = Client(), []
+out = run(lambda *a, **k: seen.append(k.get("tool_choice")) or call("submit", {"outcome": "OK", "answer": 1, "sources": []}), c,
+          steps=25, deadline=time.time() - 1)
+assert c.submits == [("OK", 1, [])] and seen == [{"type": "function", "function": {"name": "submit"}}], (c.submits, seen)
+c = Client()
+out = run(raises(AssertionError("no model call after the deadline")), c, deadline=time.time() - 100)
+assert c.submits == DEFAULT and "deadline" in out["fallback"], (c.submits, out)
 
 # 7. end to end: main.py against the mock Task API without an OpenRouter key -> both mock tasks are submitted
 srv = ThreadingHTTPServer(("127.0.0.1", 0), mock_server.H)
