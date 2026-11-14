@@ -22,3 +22,6 @@ data/
 *.log
 .idea/
 .vscode/
+
+# geheime Final-Angriffe (Repo ist öffentlich)
+breaker/*.local.json
