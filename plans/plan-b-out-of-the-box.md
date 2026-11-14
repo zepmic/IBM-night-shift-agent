@@ -1,6 +1,6 @@
 # Plan B – Out-of-the-box-Ideen (riskanter)
 
-**Status:** Entwurf, noch nichts umgesetzt · Ergänzt [Plan A](plan-a-solide.md), ersetzt ihn nicht.
+**Status:** ✅ **Entschieden: B1 + B4 werden umgesetzt** (zusammen mit Plan A). B2/B3/B5/B6 nur bei konkretem Bedarf. · Ergänzt [Plan A](plan-a-solide.md), ersetzt ihn nicht.
 Jede Idee: was, warum sie gewinnen könnte, warum sie scheitern kann, wie wir sie billig testen.
 **Regel:** Eine B-Idee kommt nur in die Abgabe, wenn sie auf **frischen Seeds** Plan A schlägt.
 

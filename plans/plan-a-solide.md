@@ -1,6 +1,6 @@
 # Plan A – Solide Gewinnstrategie
 
-**Status:** Entwurf, noch nichts umgesetzt · **Quelle:** [`challenge/01-task-api.md`](../challenge/01-task-api.md)
+**Status:** ✅ **Entschieden: Rückgrat**, kombiniert mit [B1 + B4](plan-b-out-of-the-box.md) · **Quelle:** [`challenge/01-task-api.md`](../challenge/01-task-api.md)
 **Kernidee:** Lokale Kopie + Parser + Code für alles Regelhafte, das kleine Modell nur zum Verstehen und Abwägen. Guardrails um jede schreibende Aktion. Messen über viele Dev-Seeds mit aufgedeckten Antworten.
 
 ---
