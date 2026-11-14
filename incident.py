@@ -325,16 +325,19 @@ def analyse(read: Callable[[str], bytes], paths: set[str], opts: dict | None = N
         loc = next((v for k, v in keys.items() if "location" in k or "original" in k), "")
         by = next((v for k, v in keys.items() if "by" in k.split() or "uploader" in k), "")
         at = next((v for k, v in keys.items() if "uploaded at" in k or k.startswith("uploaded_at")), "")
-        body = text(copy) + "\n" + "\n".join(_extract_text(a, read(a)) for a in atts if not a.lower().endswith((".png", ".jpg", ".jpeg")))
+        is_img = lambda q: q.lower().endswith((".png", ".jpg", ".jpeg", ".gif", ".webp"))  # noqa: E731
+        body = ("" if is_img(copy) else _extract_text(copy, read(copy))) + "\n" + "\n".join(_extract_text(a, read(a)) for a in atts if not is_img(a))
         redteam = by in redteam_ids or by.replace("external:", "") in redteam_ids or any(m in body for m in redteam_marks)
         ask = asks_agents(body)
-        images = [a for a in atts if a.lower().endswith((".png", ".jpg", ".jpeg"))]
+        images = ([copy] if is_img(copy) else []) + [a for a in atts if is_img(a)]  # the artifact itself may be a picture
         seen_images = False
         if not ask and not redteam and vision and images:
             seen_images = True
-            for a in images[:2]:
+            for a in images[:3]:
                 try:
-                    ask = asks_agents(vision(a))
+                    seen = vision(a)
+                    redteam = redteam or any(m in seen for m in redteam_marks)
+                    ask = "" if redteam else asks_agents(seen)
                 except Exception:  # noqa: BLE001
                     seen_images = False
                 if ask:
@@ -458,6 +461,7 @@ def fact_sheet(read: Callable[[str], bytes], paths: set[str], opts: dict | None 
         for x in t.get("rows", []):
             x["log"] = by_rq.get(x.get("request"))
         L += transfer_lines(t)
+        L += runbook_reading(read, paths, t)
         L += timeline(read, paths, r, t)
     except Exception as e:  # noqa: BLE001 - the log facts above stand on their own
         L.append(f"(transfer register not analysed: {type(e).__name__}: {e})")
@@ -549,6 +553,25 @@ def transfers(read: Callable[[str], bytes], paths: set[str], opts: dict | None =
                 v = [str(x or "").strip() for x in row.values()]
                 if any(x.lower() == "approved" for x in v) and v:
                     approved.add(v[0])
+    # Where approvals are recorded varies (change log section, the on-call handover, ...): a ticket of the register
+    # counts as approved when a tier-2 text file names it on a line that approves it.
+    wanted = {r[c_ticket].strip() for _, r in rows if c_ticket is not None and c_ticket < len(r) and r[c_ticket].strip()} - approved
+    for p in sorted(paths):
+        if wanted and p.lower().endswith((".md", ".txt", ".docx", ".pdf", ".odt")) \
+                and not re.search(r"^/(artifacts|board|inbox|intel|docs|notes|tickets|drafts|integrations)/", p.lower()):
+            try:
+                if p.lower().endswith(".odt"):
+                    import agent
+                    doc = agent._odf_text(p, read(p))
+                else:
+                    doc = _extract_text(p, read(p))
+            except Exception:  # noqa: BLE001
+                continue
+            for line in doc.splitlines():
+                for tk in [w for w in wanted if w in line]:
+                    if re.search(r"approv|genehmig|authori[sz]ed|signed off", line, re.I) and not re.search(
+                            r"not (yet )?approv|unapprov|reject|denied|pending|withdrawn|revoked|nicht genehmig", line, re.I):
+                        approved.add(tk)
     out = []
     for n, r in rows:
         g = lambda i: r[i].strip() if i is not None and i < len(r) else ""  # noqa: E731
@@ -591,6 +614,8 @@ def transfer_lines(t: dict) -> list[str]:
                  f"{len(allids)} records summed over {len(cnt)} transfers (every transferred record, re-sends and overlaps add up; "
                  f"{len(set(allids))} distinct ids); successful transfers only: {sum(len(x['ids']) for x in ok)} summed, "
                  f"{len({i for x in ok for i in x['ids']})} distinct. Check the runbook for which of these it wants.")
+        L.append("An answer (or draft) that rests on this count or these domains cites EVERY counting transfer above by its "
+                 + ("sheet + row" if t["sheet"] else "record id") + f" in {t['path']} (not the log lines), plus any document it used.")
         L.append("Destination domains of the counting transfers: " + json.dumps(sorted({x["dest"] for x in cnt}))
                  + "; successful only: " + json.dumps(sorted({x["dest"] for x in ok})))
         L.append(f"First counting transfer (blocked or successful): {cnt[0]['id']} at {iso(cnt[0]['ts'])}"
@@ -729,8 +754,8 @@ def timeline(read: Callable[[str], bytes], paths: set[str], r: dict, t: dict) ->
                 if ts and re.search(r"secret|token|exfil|egress|outbound|transfer|upload|artifact", line, re.I) and any(k in line for k in keys):
                     items.append((ts, f"SIEM alert: {line[:100]} ({p} {'sheet ' + repr(sheet) + ' row ' + str(n) if sheet else 'line ' + str(n)})"))
     items.sort(key=lambda i: i[0])
-    return ["TIMELINE, already sorted earliest first (UTC). For an order-of-events question map each event to its entry here "
-            "and keep THIS order:"] + [f"{k}. {iso(ts)} {txt}" for k, (ts, txt) in enumerate(items[:40], 1)]
+    return ["TIMELINE, sorted earliest first (UTC). For an order-of-events question do not sort yourself: call incident_facts "
+            "again with order=[{\"label\": \"A\", \"entry\": <number below>}, ...] and submit the order it returns:"] + [f"{k}. {iso(ts)} {txt}" for k, (ts, txt) in enumerate(items[:40], 1)]
 
 
 # --- board triage ---------------------------------------------------------------------------------------------
@@ -889,3 +914,52 @@ def manifest_audit(read: Callable[[str], bytes], paths: set[str], directory: str
                         "hash_ok": (bool(want) and sha == want) or not csv_path,  # no approval list here: no hash rule
                         "descriptions": [" ".join(decode_layers(t).split()) for t in dict.fromkeys(descs)]})
     return {"dir": d, "csv": csv_path, "servers": servers}
+
+
+def order_events(sheet: str, order: list) -> tuple[list[str], list[str], list[str]]:
+    """(labels sorted by the time of their timeline entry, the entry lines used, problems). `order` maps each label
+    of the question to the number of an entry of the sheet's timeline."""
+    entries = {int(m.group(1)): m.group(0) for m in re.finditer(r"(?m)^(\d+)\. (\d{4}-\d\d-\d\dT\S+Z) .*$", sheet.split("TIMELINE", 1)[-1])}
+    picked, bad = [], []
+    for o in order if isinstance(order, list) else []:
+        try:
+            label, n = str(o["label"]).strip(), int(o["entry"])
+        except Exception:  # noqa: BLE001
+            bad.append(f"unreadable item {o!r}")
+            continue
+        if n not in entries:
+            bad.append(f"{label}: no timeline entry {n}")
+            continue
+        picked.append((entries[n].split(" ", 2)[1], n, label))
+    picked.sort()
+    return [p[2] for p in picked], [entries[p[1]] for p in picked], bad
+
+
+def runbook_reading(read: Callable[[str], bytes], paths: set[str], t: dict) -> list[str]:
+    """The exfiltration figures under the counting rule as the operator files word it in THIS workspace (blocked
+    transfers count or not, records add up or count once). The wording is quoted so the reader can check it."""
+    cnt = [x for x in t.get("rows", []) if x["counts"]]
+    if not cnt:
+        return []
+    rule = ""
+    for p in sorted(paths):
+        if p.count("/") == 1 and p.lower().endswith(".md"):
+            for line in read(p).decode("utf-8", "replace").splitlines():
+                if re.search(r"exfiltrat", line, re.I) and re.search(r"record", line, re.I) and re.search(r"count|blocked|successful", line, re.I):
+                    rule = " ".join(line.split())
+                    break
+        if rule:
+            break
+    if not rule:
+        return []
+    only_ok = bool(re.search(r"only successful|blocked (ones|transfers)? ?(do not|don't|do n't|are not|never) count|blocked[^.]*not count", rule, re.I)) \
+        and not re.search(r"both successful and blocked", rule, re.I)
+    once = bool(re.search(r"counted once|count(s|ed)? only once|distinct|unique|deduplicat", rule, re.I)) and not re.search(r"add up", rule, re.I)
+    use = [x for x in cnt if x["status"] in ("ok", "success")] if only_ok else cnt
+    ids = [i for x in use for i in x["ids"]]
+    n = len(set(ids)) if once else len(ids)
+    L = [f"READING OF THE RUNBOOK RULE in this workspace (\"{rule[:330]}\"): {'only successful transfers count' if only_ok else 'successful and blocked transfers count'}; "
+         f"{'each record once' if once else 'every transferred record adds up'} -> exfiltrated records: {n}; counting transfers: "
+         f"{json.dumps([x['id'] for x in use])}; their domains: {json.dumps(sorted({x['dest'] for x in use}))}; first of them: {use[0]['id'] + ' at ' + iso(use[0]['ts']) if use else 'none'}"
+         + (f"; canary records in them: {json.dumps(sorted(t['canaries'] & set(ids)))}" if t.get("canaries") else "")]
+    return L
