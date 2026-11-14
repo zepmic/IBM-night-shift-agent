@@ -1,5 +1,7 @@
 # Fallback-Submit, Offline-Eval, Quellen-Ledger (Branch `daniel/fallback-eval`)
 
+> TEILWEISE VERALTET (Kostenschätzung, JSON-Records), siehe 1107-daniel-dev-run-auswertung.md
+
 **Wer:** Daniel (+ Claude Code) · **Zeit:** Sa 10:54 · **Typ:** Status + Erkenntnis
 
 Alles auf Branch `daniel/fallback-eval` (3 Commits, noch **nicht** auf main, noch **kein** Dev-Run, Kosten bisher $0).
