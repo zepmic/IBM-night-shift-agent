@@ -329,3 +329,10 @@ assert _caps(_exp, {"exclude": ["c"]})[0] == []
 assert _caps(_exp, {"grant_scopes": [{"agent": "d", "scope": "o"}]})[0] == ["a", "d"]
 assert _caps(_exp, {"remove_delegations": [{"from": "b", "to": "c"}], "add_delegations": [{"from": "d", "to": "c"}]})[0] == ["d"]
 print("capabilities ok")
+class _RegClient:
+    def download_file(self, *a):
+        return (json.dumps(_exp).encode(), "")
+_o = agent._capabilities(_RegClient(), "r", "t", {"what_if": [{"id": "R1", "agent": "d", "change": "grant_scope", "value": "o"},
+                                                             {"id": "R2", "agent": "c", "change": "grant_scope", "value": "x"}]})
+assert 'R1: ["d"]' in _o and "R2: none" in _o, _o
+print("capabilities what_if ok")

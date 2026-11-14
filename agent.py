@@ -196,7 +196,13 @@ CAPABILITIES_TOOL = {
                 "agent": {"type": "string"}, "scope": {"type": "string"}}}},
             "revoke_scopes": {"type": "array", "items": {"type": "object", "properties": {
                 "agent": {"type": "string"}, "scope": {"type": "string"}}}},
-            "exclude": {"type": "array", "items": {"type": "string"}, "description": "agent ids that cannot act (quarantined)"}}},
+            "exclude": {"type": "array", "items": {"type": "string"}, "description": "agent ids that cannot act (quarantined)"},
+            "what_if": {"type": "array", "description": "optional: changes to test ONE AT A TIME on top of the state above "
+                        "(e.g. pending access requests); for each, the agents that would newly have all of `require`",
+                        "items": {"type": "object", "properties": {
+                            "id": {"type": "string"}, "agent": {"type": "string"},
+                            "change": {"type": "string", "enum": ["add_delegation", "remove_delegation", "grant_scope", "revoke_scope"]},
+                            "value": {"type": "string", "description": "delegate agent id or scope"}}}}}},
     },
 }
 
@@ -956,6 +962,18 @@ def _capabilities(client: ArenaClient, run_id: str, task_id: str, args: dict) ->
     need = args.get("require") or ["private_data", "untrusted_input", "outbound"]
     lines = [f"agents with all of {need} ({len(hits)}): {json.dumps(hits)}", "effective classes per agent:"]
     lines += [f"{a}: {', '.join(c)}" for a, c in sorted(eff.items())]
+    key = {"add_delegation": ("add_delegations", "from", "to"), "remove_delegation": ("remove_delegations", "from", "to"),
+           "grant_scope": ("grant_scopes", "agent", "scope"), "revoke_scope": ("revoke_scopes", "agent", "scope")}
+    if args.get("what_if"):
+        lines.append("what_if (each change alone; agents that would NEWLY have all required classes):")
+    for w in args.get("what_if") or []:
+        k = key.get(str(w.get("change")))
+        if not k:
+            lines.append(f"{w.get('id')}: unknown change {w.get('change')!r}")
+            continue
+        trial = {**args, k[0]: list(args.get(k[0]) or []) + [{k[1]: w.get("agent"), k[2]: w.get("value")}]}
+        new = sorted(set(capabilities(export, trial)[0]) - set(hits))
+        lines.append(f"{w.get('id')}: {json.dumps(new) if new else 'none'}")
     return "\n".join(lines)
 
 
