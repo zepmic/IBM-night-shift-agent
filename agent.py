@@ -307,6 +307,7 @@ class Config:
     task_cost_cap: float = 0.05     # one task never spends more than this before it has to submit
     direct_submit: bool = True      # a complete computed answer to a result-only task is submitted without a model call
     preload_facts: bool = True      # incident questions get the fact sheet with the task instead of asking for it
+    preload_tables: bool = True     # action tasks get the small tables the rule files name with the task
     route: bool = True              # one small model call per task: which kinds of action does the task ask for?
 
 
@@ -561,6 +562,25 @@ def _solve(client: ArenaClient, run_id: str, task: Task, tool_specs: list[ToolSp
         evidence.add_tool("read", {"path": path}, {"text": text})
         in_context.add("read" + json.dumps({"path": path}, sort_keys=True))
     computed: list[tuple[Any, list]] = []  # complete answers computed in code before the first model call
+    # Action tasks look up the same small tables the rule files name (roster, contacts, tokens) with 1-4 calls of
+    # ~10k tokens each (run_7YkAuXC_t0cU: 20 of 134 calls); they come with the task instead.
+    if cfg.preload_tables and policy.allowed:
+        rule_text = "".join(x[2] for x in pre if x[1] in ("rule", "named"))
+        budget_chars = 4500
+        for p in dict.fromkeys(re.findall(r"/[\w./-]+\.csv\b", rule_text) + sorted(x for x in paths or () if x.lower().endswith(".csv"))):
+            if p not in (paths or ()) or re.search(r"/logs?/|/reports?/", p):
+                continue
+            try:
+                raw = client.download_file(run_id, task.task_id, p)[0]
+            except Exception:  # noqa: BLE001
+                continue
+            if len(raw) > 2500 or len(raw) > budget_chars:
+                continue
+            budget_chars -= len(raw)
+            t = "\n".join(f"{i}| {l}" for i, l in enumerate(raw.decode("utf-8-sig", "replace").splitlines(), 1))
+            messages[1]["content"] += f"\n\n=== TABLE NAMED IN THE RULES {p} (complete; cite rows by record id) ===\n{t}"
+            evidence.add_tool("read", {"path": p}, {"text": t})
+            in_context.add("read" + json.dumps({"path": p}, sort_keys=True))
     ambiguous = _ambiguous_reference(policy.authorised_text or "", client, run_id, task.task_id, paths) if policy.allowed else None
     if ambiguous:
         messages[1]["content"] += (f"\n\nNOTE (computed from the roster): the request refers to an agent as {ambiguous[0]!r}, which matches "
