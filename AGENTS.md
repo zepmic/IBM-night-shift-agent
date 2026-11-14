@@ -7,8 +7,9 @@ Gilt für Claude Code, Codex, Bob, Opencode usw.
 1. `git pull --rebase` – Teammitglieder pushen laufend neuen Kontext.
 2. [`challenge/`](challenge/README.md) lesen – offizielle Aufgabenstellung. Neueste Datei gewinnt bei Widersprüchen.
 3. [`context/`](context/README.md) lesen – Erkenntnisse, Entscheidungen, Messwerte des Teams.
-4. [`PLAYBOOK.md`](PLAYBOOK.md) – unsere Strategie und Regeln.
-5. [`README.md`](README.md) – Rollen, Git-Regeln, Zeitplan.
+4. [`plans/`](plans/) – Gewinnstrategie: [Plan A (solide)](plans/plan-a-solide.md) ist das Rückgrat, [Plan B (out of the box)](plans/plan-b-out-of-the-box.md) sind optionale Experimente.
+5. [`PLAYBOOK.md`](PLAYBOOK.md) – unsere Strategie und Regeln.
+6. [`README.md`](README.md) – Rollen, Git-Regeln, Zeitplan.
 
 ## Kontext teilen – Pflicht
 
