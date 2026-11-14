@@ -61,4 +61,4 @@ uv installieren (Mac): `brew install uv`
 
 | Version | Run-ID | Tasks | Score | Kosten | Notiz |
 |---|---|---|---|---|---|
-| Starter Kit | | | | | |
+| Starter Kit (c2ab907) | run_7FdiWah57oDE | t01 | 0.77 (Sources 1/4) | $0.0045–0.007 | Antwort richtig, Quellen unvollständig. Details: [context/1000-michel-baseline.md](context/1000-michel-baseline.md) |
