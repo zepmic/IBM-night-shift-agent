@@ -126,6 +126,12 @@ FILTER_ROWS_TOOL = {
         "parameters": {"type": "object", "properties": {
             "path": {"type": "string", "description": "workspace path of the .csv, .xlsx or .ods file"},
             "sheet": {"type": "string", "description": "optional: sheet name of an .xlsx (default: the first sheet)"},
+            "count_distinct": {"type": "string", "description": "optional: column with record ids, ranges (C-100..C-250, "
+                               "inclusive) or lists; counts the DISTINCT ids over all matching rows (overlaps and re-sends "
+                               "counted once)"},
+            "group_by": {"type": "string", "description": "optional with count_distinct: distinct count per value of this column"},
+            "group_lookup": {"type": "object", "description": "optional: map group_by values through another csv first, "
+                             "e.g. agent -> team: {\"path\": \"/fleet/agents.csv\", \"key\": \"agent_id col\", \"value\": \"team col\"}"},
             "where": {"type": "array", "description": "conditions, all must hold", "items": {"type": "object", "properties": {
                 "column": {"type": "string"},
                 "op": {"type": "string", "enum": ["eq", "ne", "contains", "not_contains", "startswith", "endswith", "empty",
@@ -865,7 +871,61 @@ def _filter_rows(client: ArenaClient, run_id: str, task_id: str, args: dict, evi
         lines.append(f"sheet rows of all matching rows (cite them as sheet {sheet!r} + row): " + json.dumps([n for n, _ in hits]))
     if conds:
         lines.append("ids of all matching rows (cite them as `record`): " + json.dumps([r[0] for _, r in hits if r]))
+    if args.get("count_distinct"):
+        try:
+            lines.append(_count_distinct(client, run_id, task_id, header, [r for _, r in hits], args))
+        except Exception as e:  # noqa: BLE001
+            lines.append(f"ERROR in count_distinct: {e}")
     return "\n".join(lines)
+
+
+def expand_ids(cell: str) -> set[str]:
+    """'C-100..C-103; C-200' -> {C-100, C-101, C-102, C-103, C-200}. Ranges are inclusive; prefix and zero padding kept."""
+    out: set[str] = set()
+    for part in re.split(r"[;,\s]+(?![^.]*\.\.)|[;,]\s*", str(cell or "")):
+        part = part.strip()
+        if not part or part in ("-", "—"):
+            continue
+        m = re.fullmatch(r"(.*?)(\d+)\s*(?:\.\.|–|-(?=\D*\d+$))\s*(.*?)(\d+)", part) if ".." in part or "–" in part else None
+        if m and (m.group(3) in ("", m.group(1))):
+            a, b, w = int(m.group(2)), int(m.group(4)), len(m.group(2))
+            out.update(f"{m.group(1)}{i:0{w}d}" for i in range(min(a, b), max(a, b) + 1))
+        else:
+            out.add(part)
+    return out
+
+
+def _count_distinct(client: ArenaClient, run_id: str, task_id: str, header: list[str], rows: list[list[str]], args: dict) -> str:
+    import csv
+    import io
+
+    col = str(args["count_distinct"])
+    if col not in header:
+        raise ValueError(f"no column {col!r}")
+    ci, gi = header.index(col), header.index(args["group_by"]) if args.get("group_by") in header else None
+    if args.get("group_by") and gi is None:
+        raise ValueError(f"no column {args['group_by']!r}")
+    lookup = None
+    if (gl := args.get("group_lookup")) and gi is not None:
+        data, _ = client.download_file(run_id, task_id, str(gl["path"]))
+        lrows = list(csv.DictReader(io.StringIO(data.decode("utf-8-sig", "replace"))))
+        lcols = list(lrows[0].keys()) if lrows else []
+        if gl.get("key") not in lcols or gl.get("value") not in lcols:
+            raise ValueError(f"group_lookup key/value must be columns of {gl['path']}: {', '.join(lcols)}")
+        lookup = {str(r.get(gl["key"], "")).strip(): str(r.get(gl["value"], "")).strip() for r in lrows}
+    total: set[str] = set()
+    groups: dict[str, set[str]] = {}
+    for r in rows:
+        ids = expand_ids(r[ci] if ci < len(r) else "")
+        total |= ids
+        if gi is not None:
+            g = r[gi].strip() if gi < len(r) else ""
+            g = lookup.get(g, f"{g} (not in lookup)") if lookup is not None else g
+            groups.setdefault(g, set()).update(ids)
+    out = f"distinct ids in {col!r} over the {len(rows)} matching rows: {len(total)}"
+    if groups:
+        out += "\nper group: " + json.dumps({g: len(v) for g, v in sorted(groups.items(), key=lambda kv: -len(kv[1]))})
+    return out
 
 
 def _match_pred(client: ArenaClient, run_id: str, task_id: str, header: list[str], spec: dict,

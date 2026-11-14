@@ -336,3 +336,9 @@ _o = agent._capabilities(_RegClient(), "r", "t", {"what_if": [{"id": "R1", "agen
                                                              {"id": "R2", "agent": "c", "change": "grant_scope", "value": "x"}]})
 assert 'R1: ["d"]' in _o and "R2: none" in _o, _o
 print("capabilities what_if ok")
+# expand_ids: overlapping inclusive ranges are counted once (run_hP6Aq5nhZhYl t01: Finance 3119)
+from agent import expand_ids
+assert len(expand_ids("C-120663..C-121152")) == 490 and expand_ids("-") == set()
+assert len(expand_ids("C-120936..C-121621") | expand_ids("C-120663..C-121152")) == 959
+assert expand_ids("C-001..C-003; C-010") == {"C-001", "C-002", "C-003", "C-010"}
+print("expand_ids ok")
