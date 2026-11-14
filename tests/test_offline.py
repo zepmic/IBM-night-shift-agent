@@ -269,3 +269,18 @@ assert _inc._rule_flags("Both successful and blocked transfers count; a record s
 print("rule flags ok")
 assert _inc._rule_flags("Repeated records. Do not merge overlapping ranges or re-sends. Sum them. Blocked transfers. What the gateway stopped never left: leave blocked attempts out.") == (True, False)
 print("rule flags 2 ok")
+
+# Contract clause in force: signed, replaces the clause, effective by now; the latest wins
+_files = {
+    "/AGENTS.md": b'Current time ("now"): 2026-11-14T07:30:00Z (UTC).',
+    "/docs/enterprise_accounts.csv": b"agreement_id,organisation,document\nAGR-1,Acme Labs,/docs/agreements/acme.md\n",
+    "/docs/agreements/acme.md": b"# DPA\n\nAgreement reference AGR-1. Signed 2025-01-01 for Acme Labs by Ann Lee.\n\n12.1 In the event of a personal-data breach affecting Acme Labs, MuggingFace will notify Acme Labs within 72 hours of detection.\n",
+    "/docs/agreements/acme_amendment_1.md": b'Clause 12.1 is replaced by:\n"12.1 In the event of a personal-data breach affecting Acme Labs, MuggingFace will notify Acme Labs\nwithin 24 hours of detection."\nEffective from 2026-01-01T00:00:00Z.\nSigned 2026-01-01 for Acme Labs by Ann Lee.\nSigned 2026-01-01 for MuggingFace by Bo Ng.\n',
+    "/docs/agreements/acme_amendment_2.md": b'Clause 12.1 is replaced by:\n"12.1 In the event of a personal-data breach affecting Acme Labs, MuggingFace will notify Acme Labs within 120 hours of detection."\nEffective from 2026-12-01T00:00:00Z.\nSigned 2026-11-01 for Acme Labs by Ann Lee.\n',
+    "/docs/agreements/acme_amendment_3.md": b'Prepared for review; not signed.\n"12.1 ... MuggingFace will notify Acme Labs of a personal-data breach within 12 hours of detection."\nSigned for Acme Labs: ________\n',
+}
+_a, _s, _e = _inc.agreement_terms(lambda p: _files[p], set(_files), "Which notification deadline is in force for Acme Labs right now?")
+assert _a == {"agreement": "AGR-1", "notify_hours": 24, "signatory": "Ann Lee"}, _a
+assert _s == [{"path": "/docs/enterprise_accounts.csv", "record": "AGR-1"}, {"path": "/docs/agreements/acme.md", "line": 3},
+              {"path": "/docs/agreements/acme_amendment_1.md"}], _s
+print("agreement terms ok")

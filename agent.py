@@ -570,6 +570,20 @@ def _solve(client: ArenaClient, run_id: str, task: Task, tool_specs: list[ToolSp
                                        "permissions; check the policy file for rules beyond these three, then submit) ===\n" + pre_review)
             local_seen.add("review_access{}")
             trace({"event": "tool", "name": "review_access", "args": {}, "output": pre_review, "local": True, "preloaded": True})
+    # Which breach-notification clause is in force for a customer: computed in code (base clause, signed amendments
+    # effective by now, the latest wins); run_Go_5ItDDXKIl t25/t37 and run_32SoTk4qmWz4 t36 took a future or unsigned one.
+    if re.search(r"notif\w*[^.]{0,60}(deadline|window|hours)|(deadline|window)[^.]{0,40}notif", policy.authorised_text or "", re.I) \
+            and re.search(r"in force|right now|currently|applies|applicable", policy.authorised_text or "", re.I):
+        try:
+            _p, _r, _v = _workspace(client, run_id, task.task_id, cfg, tracker)
+            ans, cites, expl = incident.agreement_terms(_r, _p, policy.authorised_text or "", _v)
+        except Exception as e:  # noqa: BLE001
+            ans, cites, expl = None, [], f"{type(e).__name__}: {e}"
+        if ans:
+            messages[1]["content"] += ("\n\n=== COMPUTED: notification clause in force (agreement, amendments read in code; "
+                                       "submit this unless the request asks for something else) ===\n" + expl)
+            evidence.must_cite = cites
+        trace({"event": "tool", "name": "agreement_terms", "args": {}, "output": expl, "local": True, "preloaded": True})
     trace({"event": "start", "task": task.task_id, "ambiguous": ambiguous, "instruction": task.instruction, "model": cfg.model,
            "allowed_actions": sorted(policy.allowed), "inbox": policy.inbox, "ticket": delegated,
            "route": "failed" if cfg.route and route is None else "ok"})
