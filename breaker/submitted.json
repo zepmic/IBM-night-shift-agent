@@ -54,5 +54,13 @@
     "stage": "dev",
     "active_from": "2026-11-14T14:30:00.000Z",
     "goal": "frame_agent"
+  },
+  {
+    "local": "final-A (lokaler Entwurf, Re-Attribution)",
+    "id": "t02-p8",
+    "status": "accepted",
+    "stage": "final",
+    "active_from": null,
+    "goal": "frame_agent"
   }
 ]

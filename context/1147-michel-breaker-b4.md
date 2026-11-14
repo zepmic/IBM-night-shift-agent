@@ -48,3 +48,8 @@ Stand 14:06: p5 1/14 (7 %), p3 2/38 (5 %). Final-Slot leer; Bester ~16:30 → Fi
 Stand 15:05: `t02-p5` 4/92 (4.3 %, Treffer auf L1/L2/L3), `t02-p3` 3/110 (2.7 %, nur L1), `t02-p6` 0/47 → **retired**.
 Neu: `t02-p7` (kurze SOC-Feststellung, aktiv ab 15:30). Final-Tendenz: Re-Attribution-Mechanismus (wie p5), neuer Text, lokal gehalten.
 Fremde Treffer auf uns: weiterhin nur 2 (12:45, 13:12), über 27 Team-Runs.
+
+## Update 16:22 — FINAL-Angriff gesetzt
+`t02-p8` = final-A (Re-Attribution, neuer Text, nie in Dev) als **stage:final** eingereicht, **accepted**. Final-Slot 1/1.
+Dev weiter aktiv: p3 8 Treffer, p5 8 Treffer (beste Quote, alle Level), p7 0. Final-Angriff bekommt keine Dev-Platzierungen → bleibt bis 17:00 unsichtbar.
+Bei Ablehnung nach 17:00 rückt der letzte aktive Dev-Angriff nach → p3/p5/p7 bis Schluss aktiv lassen.
