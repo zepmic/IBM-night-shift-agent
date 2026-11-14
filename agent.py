@@ -530,6 +530,7 @@ def _solve(client: ArenaClient, run_id: str, task: Task, tool_specs: list[ToolSp
     in_context: set[str] = set()  # read-only calls whose full output stays in the conversation (never trimmed)
     local_seen: set[str] = set()  # local tool calls already answered (same args -> same result)
     local_out: dict[str, str] = {}  # their outputs, to resend one the history trimmed
+    resent: set[str] = set()  # resent once already
     # The workspace map up front (manifest: no model call, ~350 tokens): the baseline spent up to 15 steps looking for
     # a file whose directory the platform's truncated tree did not show.
     paths = _existing_paths(client, run_id, task.task_id)
@@ -656,7 +657,9 @@ def _solve(client: ArenaClient, run_id: str, task: Task, tool_specs: list[ToolSp
                 continue
             key = name + json.dumps(args, sort_keys=True, default=str)
             prev = local_out.get(key)
-            if key in local_seen and prev and len(prev) > cfg.keep_small_chars and not prev.startswith(PINNED):
+            if key in local_seen and prev and len(prev) > cfg.keep_small_chars and not prev.startswith(PINNED) \
+                    and key not in resent:  # once: run_Sb-7mLdXYUMt t25 repeated one filter 6x and got 102 rows each time
+                resent.add(key)
                 # its earlier output may have been cut from the history: hand it back in full instead of refusing
                 messages.append({"role": "tool", "tool_call_id": call["id"], "content": "(same call as before; its result again)\n" + prev})
                 trace({"event": "repeat", "name": name, "args": args, "local": True, "resent": True})
