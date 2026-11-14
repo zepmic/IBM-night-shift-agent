@@ -64,3 +64,14 @@ Seeds streuen stark (±0.03); ein einzelner Run ist kein Beweis. cost_score lieg
   plus `PYTHONPATH=. uv run python tests/test_leak.py`.
 - Echte Runs: `uv run main.py --kind dev --note "<Hypothese>"` (~$0.45, ~6 min), immer nur einer gleichzeitig.
   Traces danach lokal unter runs/<run_id>/, lesbar mit `PYTHONPATH=. uv run python eval/offline/tr.py <run_id> tNN 400`.
+
+## Nachtrag 15:45
+- **Demo vorbereitet:** `prep_A7lEq9tpTG0L` = commit 4de7e02 (46 Journal-Einträge), wartet auf Bestätigung im Dashboard.
+- **Danach auf main (4673cf3):** Rückschritt behoben: gekürzte lokale Ergebnisse wurden bei jeder Wiederholung neu geliefert
+  (run_Sb-7mLdXYUMt t25: 6× dieselbe 102-Zeilen-Ausgabe, $0.053). Für das Final also main ab 4673cf3 abgeben, nicht 4de7e02.
+- **Bestätigungs-Run** auf 4de7e02 lief beim Schreiben (runs/full_run11.log lokal bei Paul; Ergebnis im Dashboard).
+- **Nächster Hebel, teuerster Task:** Access-Log-Policy („Which requests in /logs/access/requests.csv break the access-log
+  policy“): Score 0.1–0.6, bis $0.05. Die Regel 3 (gültiges Ticket in change_tickets.csv: approved, gleicher actor+resource,
+  ts in [valid_from, valid_until), vor revoked_at) braucht `filter_rows` mit `{"op": "no_match", ...}`; das Modell nutzt es
+  nicht. Lösung: POLICY.md-Bedingungen in Code auf eine filter_rows-Spezifikation abbilden und das Ergebnis vorab beilegen
+  (wie review_access), mit Test gegen einen leeren Dev-Run.
