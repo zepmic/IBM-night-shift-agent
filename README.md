@@ -1,7 +1,12 @@
-# Harness Arena: Python starter kit
+# 🏆 Efficient Local Agents Hackathon — 2nd Place
 
-> **Hackathon-Repo.** Entstanden beim **Efficient Local Agents Hackathon** der **AI Impact Mission (AIM)**, IBM Vienna, 14.11.2026, Team Donaufriends (team-02).
-> **Aufgabe:** einen Agenten-Harness um ein **festes kleines Modell** bauen, der Incident-Tasks über die Arena Task API löst — **korrekt und möglichst billig** (Kosten sind die Hälfte des Scores). Teamkontext: [TEAM.md](TEAM.md) · [AGENTS.md](AGENTS.md) · [challenge/](challenge/README.md).
+**This repo won 2nd place** at the **Efficient Local Agents Hackathon** by the **AI Impact Mission (AIM)**, IBM Vienna, 14 Nov 2026 — Team Donaufriends (team-02).
+
+**The challenge:** build an agent harness around a **fixed small model** that solves incident-response tasks via the Arena Task API — **correctly and as cheaply as possible** (cost is half the score). Team context: [TEAM.md](TEAM.md) · [AGENTS.md](AGENTS.md) · [challenge/](challenge/README.md).
+
+---
+
+## Harness Arena: Python starter kit
 
 A Task API client plus a deliberately simple baseline agent (a tool-calling loop on the fixed small model, optional Jev example).
 Fork it, break it, make it better. Only the harness is yours to improve: the models are fixed.
