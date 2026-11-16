@@ -2,7 +2,9 @@
 
 **This repo won 2nd place** at the **Efficient Local Agents Hackathon** by the **AI Impact Mission (AIM)**, IBM Vienna, 14 Nov 2026 — Team Donaufriends (team-02).
 
-**The challenge:** build an agent harness around a **fixed small model** that solves incident-response tasks via the Arena Task API — **correctly and as cheaply as possible** (cost is half the score). Team context: [TEAM.md](TEAM.md) · [AGENTS.md](AGENTS.md) · [challenge/](challenge/README.md).
+**The challenge:** build an agent harness around a **fixed small model** that solves incident-response tasks via the Arena Task API — **correctly and as cheaply as possible** (cost is half the score). Team context: [TEAM.md](TEAM.md) · [AGENTS.md](AGENTS.md).
+
+*The organisers' briefing, slides and the official task scenario are intentionally not included in this public repo.*
 
 ---
 
