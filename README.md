@@ -6,6 +6,8 @@
 
 *The organisers' briefing, slides and the official task scenario are intentionally not included in this public repo.*
 
+**License:** [MIT](LICENSE) for the team's own code. Parts of this repo come from the organisers' Harness Arena starter kit.
+
 ---
 
 ## Harness Arena: Python starter kit
